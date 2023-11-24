@@ -66,5 +66,13 @@
                   (c/cat (c/char \{) % (c/char \}))))
    "([a])")
 
+  (c/run (c/p* (c/char \a)) "")
+  (c/run (c/p* (c/char \a)) "aaaaaab")
+  (c/run (c/p* (c/? (c/char \a))) "b")
+
+  (c/run (c/p+ (c/char \a)) "b")
+  (c/run (c/p+ (c/char \a)) "aaaaaab")
+  (c/run (c/p+ (c/? (c/char \a))) "b")
+
   ;;
   )

@@ -28,7 +28,7 @@
 
 ;;---------------------------------------------------------
 
-;; fparsec:
+;; fparsec: preturn
 ;; fparsec also has >>%: parse p, but return x
 (defn return [x]
   (fn [state reply]
@@ -78,6 +78,7 @@
 ;; .>>.: like (cat p1 p2)
 ;; parsesso: `>>.` is called `after`
 
+;; TODO: Implement without recursion; like * combinator?
 (defn pseq*
   ([ps]
    (pseq* ps cons))
@@ -224,15 +225,76 @@
   ([p not-found]
    (alt2 p (return not-found))))
 
+(defn- state-unchanged-exception [pname p]
+  (ex-info (str "Parser supplied to '" pname "' succeeded without changing the parser state")
+           {:type ::state-unchanged
+            :parser pname
+            :arg p}))
+
+;; Ideas:
+;; - generalise this to take a sequence of parsers.
+;;   so that we can also use that for pseq*
+;; - for many: use (repeat p'), wrapping p with a parser
+;;   that throws on 'ok', so that this detail can be contained
+;; - use `loop` and `run` each parser with a `reply`,
+;;   instead of using continuation-passing style (benchmark!)
+
+(defn- reduce-many
+  "Repeatedly applies `p` until `p` fails.  Reduces the results
+   produced by `p` using the reducing function `rf`.
+
+   Tries to guard against an infinite loop by throwing an exception
+   if `p` succeeds without changing the parser state, reporting a
+   `state-unchanged-exception` with the parser name `pname`.
+
+   When `p` fails on the first call (without changing the state),
+   i.e. when `p` succeeded zero times, calls
+   `(zero reply state errors)`, so that implementations can succeed
+   or fail."
+  [pname zero f p]
+  (letfn [(ok [_ _ _]
+            (throw (state-unchanged-exception pname p)))]
+    (fn [state reply]
+      (letfn [(error1 [s1 e1]
+                (zero reply s1 e1))
+              (make-ok! [result]
+                (fn ok! [s1 v1 e1]
+                  (let [result (f result v1)
+                        error2 (fn error [s2 e2]
+                                 (reply/ok reply s2 (f result) (concat e1 e2)))]
+                    (continue p s1 (reply/with reply
+                                               :ok ok
+                                               :ok! (make-ok! result)
+                                               :error error2)))))]
+        (continue p state (reply/with reply
+                                      :ok ok
+                                      :ok! (make-ok! (f))
+                                      :error error1))))))
+
+(defn- accumulate
+  "Reducing function that collects input in a vector.
+   Like `conj!`, but completes with a persistent collection."
+  ([] (transient []))
+  ([coll] (persistent! coll))
+  ([coll x] (conj! coll x)))
+
+(defn- many [pname zero p]
+  (reduce-many pname zero accumulate p))
+
+(defn- zero-ok [reply state errors]
+  (reply/ok reply state nil errors))
+
 ;; TODO: Rename to just `*`
 (defn p*
   "Zero or more."
-  [p])
+  [p]
+  (many `p* zero-ok p))
 
 ;; TODO: Rename to just `+`
 (defn p+
   "One or more."
-  [p])
+  [p]
+  (many `p+ reply/error p))
 
 (defn pmin [p min])
 (defn pmax [p max])
