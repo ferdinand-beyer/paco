@@ -41,7 +41,13 @@
     (EndStream. 0)
     (StringStream. string 0)))
 
-(deftype Position [char line column])
+(deftype Position [char line column]
+  Object
+  (toString [_] (str "line " (inc line)
+                     ", column " (inc column))))
+
+;; ? Maybe support stream transform functions
+;; - normalize newlines to \n
 
 (deftype State [stream ^int line ^int line-begin user-state]
   IStream
@@ -97,11 +103,14 @@
           (same-line state new-stream)))
       state)))
 
-;; TODO: Need StateTag?
-;; Modification counter
+;; TODO: Need StateTag? Modification counter?
+(defn unchanged? [state1 state2]
+  (or (identical? state1 state2)
+      (= (char-index state1)
+         (char-index state2))))
+
 (defn changed? [state1 state2]
-  (not= (char-index state1)
-        (char-index state2)))
+  (not (unchanged? state1 state2)))
 
 (defn matches? [state ^String s]
   (= s (peek-str state (.length s))))

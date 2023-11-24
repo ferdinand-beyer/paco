@@ -1,34 +1,70 @@
 (ns user
-  (:require [criterium.core :as c]))
-
-(set! *warn-on-reflection* true)
-
-(defprotocol IStream
-  (-peek [stream])
-  (-skip [stream]))
-
-(deftype StringStream [^String s ^int pos]
-  IStream
-  (-peek [_] (.charAt s pos))
-  (-skip [_] (StringStream. s (unchecked-inc pos))))
+  (:require [comparse.core :as c]))
 
 (comment
-  (def input "The quick brown fox jumps over the lazy dog.")
+  (c/run (c/cat (c/char \f)
+                (c/char \o)
+                (c/char \o))
+         "foobar")
 
-  (let [s (seq input)]
-    (c/bench (first (next (next s)))))
+  (c/run (c/string "foo")
+         "foobar")
 
-  (let [^clojure.lang.ISeq s (seq input)]
-    (c/bench (.first (.next (.next s)))))
+  (c/run (c/string "foo")
+         "fo")
 
-  (let [s (StringStream. input 0)]
-    (c/bench (-peek (-skip (-skip s)))))
+  (c/run (c/string "foo") "")
 
-  (def stream (StringStream. input 0))
-  (c/bench (-peek (-skip (-skip stream))))
+  (c/run (c/cat (c/string "foo")
+                (c/string "bar"))
+         "foobar")
 
-  (let [s (StringStream. input 0)]
-    (-peek (-skip (-skip s))))
+  (c/run (c/cat (c/string "foo")
+                (c/string "bar"))
+         "foobuzz")
+
+  (c/run (c/attempt (c/cat (c/string "foo")
+                           (c/string "bar")))
+         "foobuzz")
+
+  (c/run (c/cat (c/string "foo")
+                (c/cat (c/string "bu")
+                       (c/string "zz")))
+         "foobuzz")
+
+  (c/run (c/pseq (c/string "foo")
+                 (c/cat (c/string "bu")
+                        (c/string "zz")))
+         "foobuzz")
+
+  (c/run (c/satisfy #{\a \b \c} "abc")
+         "x")
+
+  (c/run (c/cat (c/alt (c/string "foo")
+                       (c/cat
+                        (c/string "bar")
+                        (c/satisfy #{\1 \2 \3 \4 \5 \6 \7 \8 \9 \0}
+                                   "digit")))
+                (c/string "buzz"))
+         "barbuzz")
+
+  (c/run (-> (c/string "42")
+             (c/expected "The answer to life, the universe, and everything."))
+         "x")
+
+  (c/run (c/? (c/string "foo"))
+         "bar")
+  (c/run (c/cat (c/string "foo")
+                (c/? (c/string "and"))
+                (c/string "bar"))
+         "fooandbar")
+
+  (c/run
+   (c/rec #(c/alt (c/char \a)
+                  (c/cat (c/char \() % (c/char \)))
+                  (c/cat (c/char \[) % (c/char \]))
+                  (c/cat (c/char \{) % (c/char \}))))
+   "([a])")
 
   ;;
   )

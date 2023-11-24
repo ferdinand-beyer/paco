@@ -1,1 +1,1 @@
-{:lint-as {comparse.api/with clojure.core/let}}
+{:lint-as {comparse.api/plet clojure.core/let}}
