@@ -4,6 +4,11 @@
             [criterium.core :as criterium]))
 
 (comment
+  (p/parse (p/>> (c/string "Just")
+                 (c/char \space)
+                 (c/string "do"))
+           "Just do")
+
   (p/parse (p/cat (c/char \f)
                   (c/char \o)
                   (c/char \o))
@@ -82,38 +87,54 @@
   (p/parse (p/+ (c/char \a)) "aaaaaab")
   (p/parse (p/+ (p/? (c/char \a))) "b")
 
-  (p/run (p/pipe (c/char \a)
-                 (c/char \b)
-                 (c/char \c)
-                 (c/char \d)
-                 (fn [a b c d]
-                   {:a a, :b b, :c c, :d d}))
-         "abcd")
+  (let [p (p/cat (c/string "the")
+                 (c/char \space)
+                 (c/string "quick")
+                 (c/char \space)
+                 (c/string "brown")
+                 (c/char \space)
+                 (c/string "fox")
+                 (c/char \space)
+                 (c/string "jumps")
+                 (c/char \space)
+                 (c/string "over")
+                 (c/char \space)
+                 (c/string "the")
+                 (c/char \space)
+                 (c/string "lazy")
+                 (c/char \space)
+                 (c/string "dog"))]
+    (criterium/quick-bench
+     (p/parse p "the quick brown fox jumps over the lazy dog")))
+  ;; cons: Execution time mean : 1,078848 µs
+  ;; reduce: Execution time mean : 876,197052 ns
 
-  (def ps [(c/char \a)
-           (c/char \b)
-           (c/char \c)
-           (c/char \d)
-           (c/char \e)
-           (c/char \f)])
+  (p/parse (p/cat (p/? (p/cat (c/string "foo")
+                              (c/string "bar")))
+                  (c/string "foox"))
+           "foox")
 
-  (def p1 (p/series ps))
-  (def p2 (p/series2 ps))
+  (p/parse (p/cat (p/?? (p/cat (c/string "foo")
+                               (c/string "bar")))
+                  (c/string "foox"))
+           "foox")
 
-  (criterium/quick-bench
-   (p/run p1 ""))
-  (criterium/quick-bench
-   (p/run p2 ""))
+  (p/parse (p/cat (p/? (p/attempt (p/cat (c/string "foo")
+                                         (c/string "bar"))))
+                  (c/string "foox"))
+           "foox")
 
-  (criterium/quick-bench
-   (p/run p1 "abc"))
-  (criterium/quick-bench
-   (p/run p2 "abc"))
+  (let [p (p/cat (p/?? (p/cat (c/string "foo")
+                              (c/string "bar")))
+                 (c/string "foox"))]
+    (criterium/quick-bench
+     (p/parse p "foox")))
 
-  (criterium/quick-bench
-   (p/run p1 "abcdex"))
-  (criterium/quick-bench
-   (p/run p2 "abcdex"))
+  (let [p (p/cat (p/? (p/attempt (p/cat (c/string "foo")
+                                        (c/string "bar"))))
+                 (c/string "foox"))]
+    (criterium/quick-bench
+     (p/parse p "foox")))
 
 ;;
   )

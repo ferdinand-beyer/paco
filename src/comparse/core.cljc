@@ -114,6 +114,40 @@
 ;; maybe we can find patterns how we wrap "ok"?
 ;; and create macros to help us with repetition?
 
+;; Move parsers like these to an `advanced` namespace
+;; to make them available to experts?
+;; TODO: Also provide a version taking a `xform`?
+(defn- reduce-series
+  "Creates a parser that runs `ps` in sequence, reducing their return
+   values with the reducing function `f`."
+  [f ps]
+  (letfn [(runner [p run-next]
+            (fn [result msgs state ok ok! fail fail!]
+              (continue p state
+                        (fn ok' [state' value' msgs']
+                          (run-next (f result value')
+                                    (error/merge-messages msgs msgs')
+                                    state'
+                                    ok ok!
+                                    fail fail!))
+                        (fn ok!' [state' value' msgs']
+                          (run-next (f result value')
+                                    msgs'
+                                    state'
+                                    ok! ok!
+                                    fail! fail!))
+                        (fail-with-msgs fail msgs)
+                        fail!)))
+          (complete [result msgs state ok _ _ _]
+            (ok state (f result) msgs))
+          (compile [ps]
+            (if-let [p (first ps)]
+              (runner p (compile (next ps)))
+              complete))]
+    (let [run (compile ps)]
+      (fn [state ok ok! fail fail!]
+        (run (f) nil state ok ok! fail fail!)))))
+
 (defn- emit-pipe-body
   [f ps prev-state prev-values prev-msgs ok ok! fail fail!]
   (let [n           (inc (count prev-values))
@@ -140,7 +174,9 @@
     (list `continue (first ps) prev-state
           (list `fn (sym "ok") [state value msgs] ok-body)
           (list `fn (sym "ok!") [state value msgs] ok!-body)
-          fail fail!)))
+          (list `fn (sym "fail!") [state msgs]
+                (list fail state merged-msgs))
+          fail!)))
 
 (defn- emit-pipe-parser [ps f]
   (list `fn (symbol (str "pipe" (count ps)))
@@ -151,6 +187,11 @@
 (defmacro ^:private pipe-parser [& ps+f]
   (emit-pipe-parser (butlast ps+f) (last ps+f)))
 
+(comment
+  (emit-pipe-parser '[p1 p2 p3] 'f)
+  ;
+  )
+
 ;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
 (defn pipe
   ([p f]
@@ -158,20 +199,12 @@
   ([p1 p2 f]
    (pipe-parser p1 p2 f))
   ([p1 p2 p3 f]
-   (pipe-parser p1 p2 p3 f))
-  ([p1 p2 p3 p4 f]
-   (pipe-parser p1 p2 p3 p4 f))
-  ([p1 p2 p3 p4 p5 f]
-   (pipe-parser p1 p2 p3 p4 p5 f)))
+   (pipe-parser p1 p2 p3 f)))
 
 (defn series
   "The parser `(series ps)` applies the parsers `ps` in sequence."
-  ([ps]
-   (series ps cons))
-  ([ps f]
-   (if-let [p (first ps)]
-     (pipe p (series (next ps) f) f)
-     pnil)))
+  [ps]
+  (reduce-series accumulate ps))
 
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 (defn group
@@ -181,21 +214,15 @@
   ([p1 p2 p3 & more]
    (series (list* p1 p2 p3 more))))
 
-(defn- emit-do* [[p & ps]]
-  (if (seq ps)
-    `(bind ~p (fn [~'_] ~(emit-do* ps)))
-    p))
-
-(defn- emit-do [ps]
-  (if (seq ps)
-    (emit-do* ps)
-    `pnil))
-
 ;; fparsec: >>.
 ;; parsesso: after
 ;; Would be cool to call this `do`, but this fails
-(defmacro >> [& body]
-  (emit-do body))
+(defn >> [& ps]
+  (reduce-series (fn
+                   ([] nil)
+                   ([result] result)
+                   ([_ input] input))
+                 ps))
 
 ;; fparsec: .>> - return the first result
 ;; fparsetc: .>>.: like (cat p1 p2)
@@ -203,6 +230,13 @@
 
 ;;---------------------------------------------------------
 ;; Parsing alternatives and recovering from errors
+
+(defn- ok-backtrack [ok state value]
+  (fn [state' msgs]
+    (ok state value
+        (error/nested (state/position state')
+                      (state/user-state state')
+                      msgs))))
 
 (defn- fail-backtrack [fail state]
   (fn [state' msgs]
@@ -214,10 +248,23 @@
 ;; fparsec: >>=?, >>? (should be >>.?), .>>.?
 ;; These backtrack to the beginning if the second parser fails
 ;; "with a non‐fatal error and without changing the parser state"
-;; alternate names: try, ptry, recover
+;; alternate names: try, ptry, recover, !
 (defn attempt [p]
   (fn [state ok ok! fail _]
     (continue p state ok ok! fail (fail-backtrack fail state))))
+
+(defn ??
+  "Applies `p`.  If `p` fails, `??` will backtrack to the original state
+   and succeed with `not-found` or `nil`.
+
+   `(?? p)` is an optimized implementation of `(? (attempt p))`."
+  ([p] (?? p nil))
+  ([p not-found]
+   (fn [state ok ok! _ _]
+     (continue p state ok ok!
+               (fn [state msgs]
+                 (ok state not-found msgs))
+               (ok-backtrack ok state not-found)))))
 
 (defn- alt2
   ([p1 p2]
@@ -290,19 +337,18 @@
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
 
-(defn- cat-cons [x xs]
-  (cond
-    (nil? x) xs
-    (seq? x) (concat x xs)
-    :else    (cons x xs)))
+(defn- cat-rf
+  ([] (transient []))
+  ([xs] (persistent! xs))
+  ([xs x]
+   (cond
+     (nil? x) xs
+     (sequential? x) (reduce conj! xs x)
+     :else (conj! xs x))))
 
 ;; like group, but flattens
-(defn cat
-  ([p1] p1)
-  ([p1 p2]
-   (series (list p1 p2) cat-cons))
-  ([p1 p2 p3 & more]
-   (series (list* p1 p2 p3 more) cat-cons)))
+(defn cat [& ps]
+  (reduce-series cat-rf ps))
 
 ;; alternative names: opt, maybe
 (defn ?
