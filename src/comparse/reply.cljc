@@ -25,7 +25,7 @@
 (defn- emit-with [reply-fns binding-map]
   {:pre [(seq binding-map)
          (every? #{:ok :ok! :error :error!} (keys binding-map))]}
-  (let [sym (gensym "r_")]
+  (let [sym (with-meta (gensym "r_") {:tag `ReplyFns})]
     `(let [~sym ~reply-fns]
        (ReplyFns.
         ~(emit-fn sym binding-map :ok)

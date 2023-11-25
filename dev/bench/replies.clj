@@ -1,5 +1,5 @@
-(ns benchmark
-  (:require [criterium.core :as criterium]))
+(ns bench.replies
+  (:require [criterium.core :refer [bench]]))
 
 (set! *warn-on-reflection* true)
 
@@ -62,19 +62,59 @@
   (-error [_ state errors] (error state errors))
   (-error! [_ state errors] (error! state errors)))
 
+(defn return-csp [x]
+  (fn [state ok _ok! _error _error!]
+    (ok state x (list :test))))
+
+(defn fwd-ok [ok errors]
+  (if (seq errors)
+    (fn [s v e]
+      (ok s v (concat errors e)))
+    ok))
+
+(defn fwd-error [error errors]
+  (if (seq errors)
+    (fn [s e]
+      (error s (concat errors e)))
+    error))
+
+(defn bind-csp [p f]
+  (fn [state ok ok! error error!]
+    (fn []
+      (p state
+         (fn [s1 v1 e1]
+           (fn []
+             ((f v1) s1
+                     (fwd-ok ok e1)
+                     ok!
+                     (fwd-error error e1)
+                     error!)))
+         (fn [s1 v1 e1]
+           (fn []
+             ((f v1) s1 (fwd-ok ok! e1) ok! error! error!)))
+         error
+         error!))))
+
+(defn run-csp [p state]
+  (letfn [(ok [s v e]
+            (list :ok s v e))
+          (error [s e]
+            (list :error s e))]
+    (trampoline p state ok ok error error)))
+
 (comment
   (def input "The quick brown fox jumps over the lazy dog.")
 
-  (criterium/bench
+  (bench
    (run-seq input))
 
-  (criterium/bench
+  (bench
    (run-seq* input))
 
-  (criterium/bench
+  (bench
    (run-stream input))
 
-  (criterium/bench
+  (bench
    (run-stream* input))
 
   (def reply (ReplyFns. (constantly :ok)
@@ -82,14 +122,19 @@
                         (constantly :error)
                         (constantly :error!)))
 
-  (criterium/bench
+  (bench
    (-ok! reply nil nil nil))
 
-  (criterium/bench
+  (bench
    (.-ok! ^ReplyFns reply nil nil nil))
 
-  (criterium/bench
+  (bench
    ((.-ok! ^ReplyFns reply) nil nil nil))
+
+  (bench
+   (run-csp (bind-csp (return-csp :foo)
+                      (constantly (return-csp :bar)))
+            ""))
 
   ;;
   )
