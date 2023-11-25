@@ -1,9 +1,10 @@
 (ns bench.showdown
   (:require [blancas.kern.core :as k]
-            [comparse.core :as c]
+            [comparse.char :as c]
+            [comparse.core :as p]
             [criterium.core :as criterium]
-            [strojure.parsesso.char :as char]
-            [strojure.parsesso.parser :as p]
+            [strojure.parsesso.char :as qc]
+            [strojure.parsesso.parser :as q]
             [the.parsatron :as t]))
 
 (set! *warn-on-reflection* true)
@@ -27,12 +28,12 @@
 (defmacro bench-comparse [parser input]
   `(let [parser# ~parser
          input#  ~input]
-     (bench (c/run parser# input#))))
+     (bench (p/run parser# input#))))
 
 (defmacro bench-parsesso [parser input]
   `(let [parser# ~parser
          input#  ~input]
-     (bench (p/parse parser# input#))))
+     (bench (q/parse parser# input#))))
 
 (defmacro bench-kern [parser input]
   `(let [parser# ~parser
@@ -52,13 +53,13 @@
 
 ;; ## Return value without parsing ##
 
-(bench-comparse (c/return :x) "")
+(bench-comparse (p/return :x) "")
 ;             Execution time mean : 71,963164 ns
 ;    Execution time std-deviation : 3,689837 ns
 ;   Execution time lower quantile : 65,273401 ns ( 2,5%)
 ;   Execution time upper quantile : 75,114557 ns (97,5%)
 
-(bench-parsesso (p/result :x) "")
+(bench-parsesso (q/result :x) "")
 ;             Execution time mean : 64,838090 ns
 ;    Execution time std-deviation : 4,645637 ns
 ;   Execution time lower quantile : 61,918959 ns ( 2,5%)
@@ -80,11 +81,13 @@
 
 ;; ## Fail immediately without parsing ##
 
-(bench (p/parse* (p/fail :x) []))
-;             Execution time mean : 188,952263 ns
-;    Execution time std-deviation : 17,000877 ns
-;   Execution time lower quantile : 172,453755 ns ( 2,5%)
-;   Execution time upper quantile : 210,153699 ns (97,5%)
+(bench-comparse (p/fail :x) "")
+
+(bench (q/parse* (q/fail :x) []))
+;             Execution time mean : 81,478078 ns
+;    Execution time std-deviation : 0,673121 ns
+;   Execution time lower quantile : 80,699739 ns ( 2,5%)
+;   Execution time upper quantile : 82,937188 ns (97,5%)
 
 (bench-kern (k/fail :x) [])
 ;             Execution time mean : 386,590746 ns
@@ -103,14 +106,14 @@
 
 ;; ## Parse token ##
 
-(bench-comparse (c/satisfy #(= \a %)) "abc")
+(bench-comparse (p/satisfy #(= \a %)) "abc")
 ;             Execution time mean : 70,992962 ns
 ;    Execution time std-deviation : 4,885139 ns
 ;   Execution time lower quantile : 67,366876 ns ( 2,5%)
 ;   Execution time upper quantile : 76,592771 ns (97,5%)
 ;                   Overhead used : 1,924675 ns
 
-(bench-parsesso (p/token #(= \a %)) "abc")
+(bench-parsesso (q/token #(= \a %)) "abc")
 ;             Execution time mean : 93,684178 ns
 ;    Execution time std-deviation : 6,080481 ns
 ;   Execution time lower quantile : 89,362737 ns ( 2,5%)
@@ -138,7 +141,7 @@
 ;   Execution time lower quantile : 81,694532 ns ( 2,5%)
 ;   Execution time upper quantile : 85,199353 ns (97,5%)
 
-(bench-parsesso (p/word "abc") "abc")
+(bench-parsesso (q/word "abc") "abc")
 ;             Execution time mean : 143,127655 ns
 ;    Execution time std-deviation : 9,777534 ns
 ;   Execution time lower quantile : 135,603025 ns ( 2,5%)
@@ -160,7 +163,7 @@
 
 ;; ## Parse word, case-insensitive ##
 
-(bench-parsesso (p/word "abc" :ic) "ABC")
+(bench-parsesso (q/word "abc" :ic) "ABC")
 ;             Execution time mean : 631,199580 ns
 ;    Execution time std-deviation : 9,939793 ns
 ;   Execution time lower quantile : 618,951019 ns ( 2,5%)
@@ -182,7 +185,7 @@
 ;   Execution time lower quantile : 66,494457 ns ( 2,5%)
 ;   Execution time upper quantile : 80,273477 ns (97,5%)
 
-(bench-parsesso (p/word -input-10000) -input-10000)
+(bench-parsesso (q/word -input-10000) -input-10000)
 ;             Execution time mean : 462,584681 µs
 ;    Execution time std-deviation : 17,856160 µs
 ;   Execution time lower quantile : 444,209929 µs ( 2,5%)
@@ -202,7 +205,7 @@
 
 ;; ## Parse letters ##
 
-(bench-parsesso (p/*many char/letter?) "abc")
+(bench-parsesso (q/*many qc/letter?) "abc")
 ;             Execution time mean : 975,326535 ns
 ;    Execution time std-deviation : 65,828611 ns
 ;   Execution time lower quantile : 915,594047 ns ( 2,5%)
@@ -224,7 +227,7 @@
 
 ;; ## Parse letters as string ##
 
-(bench-parsesso (-> (p/*many char/letter?) (p/value char/str*)) "abc")
+(bench-parsesso (-> (q/*many qc/letter?) (q/value qc/str*)) "abc")
 ;             Execution time mean : 1,514160 µs
 ;    Execution time std-deviation : 104,898493 ns
 ;   Execution time lower quantile : 1,439323 µs ( 2,5%)
@@ -240,13 +243,13 @@
 
 ;; ## Parse `many` for long input ##
 
-(bench-comparse (c/p* (c/satisfy #(= \a %))) -input-10000)
+(bench-comparse (p/* (p/satisfy #(= \a %))) -input-10000)
 ;             Execution time mean : 356,890924 µs
 ;    Execution time std-deviation : 5,169162 µs
 ;   Execution time lower quantile : 351,230010 µs ( 2,5%)
 ;   Execution time upper quantile : 365,182280 µs (97,5%)
 
-(bench-parsesso (p/*many (p/token #(= \a %))) -input-10000)
+(bench-parsesso (q/*many (q/token #(= \a %))) -input-10000)
 ;             Execution time mean : 490,252562 µs
 ;    Execution time std-deviation : 16,447039 µs
 ;   Execution time lower quantile : 475,693254 µs ( 2,5%)
@@ -268,7 +271,7 @@
 
 ;; ## Skip `many` for long input ##
 
-(bench-parsesso (p/*skip (p/token #(= \a %))) -input-10000)
+(bench-parsesso (q/*skip (q/token #(= \a %))) -input-10000)
 ;             Execution time mean : 365,390438 µs
 ;    Execution time std-deviation : 3,226478 µs
 ;   Execution time lower quantile : 361,857830 µs ( 2,5%)
@@ -284,17 +287,17 @@
 
 ;; ## The `alt` combinator ##
 
-(bench-comparse (c/alt (c/fail "a")
-                       (c/fail "b")
-                       (c/return :x)) "")
+(bench-comparse (p/alt (p/fail "a")
+                       (p/fail "b")
+                       (p/return :x)) "")
 ;             Execution time mean : 141,159754 ns
 ;    Execution time std-deviation : 4,565528 ns
 ;   Execution time lower quantile : 137,215126 ns ( 2,5%)
 ;   Execution time upper quantile : 147,166788 ns (97,5%)
 
-(bench-parsesso (p/alt (p/fail "a")
-                       (p/fail "b")
-                       (p/result :x)) "")
+(bench-parsesso (q/alt (q/fail "a")
+                       (q/fail "b")
+                       (q/result :x)) "")
 ;             Execution time mean : 177,446659 ns
 ;    Execution time std-deviation : 1,897155 ns
 ;   Execution time lower quantile : 175,001796 ns ( 2,5%)
@@ -320,13 +323,13 @@
 
 ;; ## Wrap with `expecting` ##
 
-(bench-comparse (-> (c/return :x) (c/expected "x")) "")
+(bench-comparse (-> (p/return :x) (p/expected "x")) "")
 ;             Execution time mean : 78,954855 ns
 ;    Execution time std-deviation : 7,143476 ns
 ;   Execution time lower quantile : 74,021075 ns ( 2,5%)
 ;   Execution time upper quantile : 89,549045 ns (97,5%)
 
-(bench-parsesso (-> (p/result :x) (p/expecting "x")) [])
+(bench-parsesso (-> (q/result :x) (q/expecting "x")) [])
 ;             Execution time mean : 88,435374 ns
 ;    Execution time std-deviation : 6,137121 ns
 ;   Execution time lower quantile : 84,140302 ns ( 2,5%)
@@ -342,7 +345,7 @@
 
 ;; ## Test for the end of input ##
 
-(bench (p/parse* p/eof " "))
+(bench (q/parse* q/eof " "))
 ;             Execution time mean : 231,661354 ns
 ;    Execution time std-deviation : 25,008376 ns
 ;   Execution time lower quantile : 209,952763 ns ( 2,5%)
@@ -363,8 +366,8 @@
 
 ;;,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 
-(bench-parsesso (p/after (p/word "<!--")
-                         (p/*many-till p/any-token (p/maybe (p/word "-->"))))
+(bench-parsesso (q/after (q/word "<!--")
+                         (q/*many-till q/any-token (q/maybe (q/word "-->"))))
                 "<!-- comment -->")
 ;             Execution time mean : 7,450434 µs
 ;    Execution time std-deviation : 607,080144 ns

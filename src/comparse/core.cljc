@@ -1,127 +1,159 @@
 (ns comparse.core
-  (:refer-clojure :exclude [cat char repeat])
-  (:require [comparse.error :as error]
-            [comparse.reply :as reply]
+  (:refer-clojure :exclude [* + cat max min ref repeat])
+  (:require [clojure.core :as core]
+            [comparse.error :as error]
             [comparse.state :as state])
-  #?(:require-macros [comparse.api :refer [with thunk]]))
+  #?(:require-macros [comparse.core :refer [continue lazy with]]))
 
-(defn- parse-exception [state errors]
-  (let [pos (state/position state)]
-    (ex-info (str "Parse Error: " (error/render-errors errors)
+#?(:clj (set! *warn-on-reflection* true))
+
+(defn- parser-ok [_state value _msgs]
+  {:pre [(not (fn? value))]}
+  value)
+
+(defn- parse-exception [state msgs]
+  (core/let [pos (state/position state)]
+    (ex-info (str "Parse Error: " (error/render-messages msgs)
                   " at " pos)
              {:type ::parse-error
               :position pos
-              :errors errors})))
+              :messages msgs})))
 
-(def ^:private root-reply
-  (reply/reply-fns
-   (fn ok [_ result _] result)
-   (fn error [state errors]
-     (throw (parse-exception state errors)))))
+(defn- parser-fail [state msgs]
+  ;(throw (parse-exception state msgs))
+  (parse-exception state msgs))
 
 (defn run [p input]
   ;; TODO: initial state from input + opts
-  (trampoline p (state/of-string input) root-reply))
-
-(defn- continue [p state reply]
-  (fn [] (p state reply)))
+  (trampoline #(p (state/of-string input)
+                  parser-ok parser-ok
+                  parser-fail parser-fail)))
 
 ;;---------------------------------------------------------
 
 ;; fparsec: preturn
 ;; fparsec also has >>%: parse p, but return x
 (defn return [x]
-  (fn [state reply]
-    (reply/ok reply state x)))
+  (fn [state ok _ _ _]
+    (ok state x nil)))
 
-(def pnil
-  (fn [state reply]
-    (reply/ok reply state nil)))
+;; fparsec: pzero, but fails
+(defn pnil [state ok _ _ _]
+  (ok state nil nil))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping
 
-(defn- with-errors [reply errors]
-  (if (seq errors)
-    (letfn [(ok [s v e]
-              (reply/ok reply s v (concat errors e)))
-            (error [s e]
-              (reply/error reply s (concat errors e)))]
-      (reply/with reply :ok ok :error error))
-    reply))
+(defmacro ^:private continue [p state ok ok! fail fail!]
+  `(fn ~'cont [] (~p ~state ~ok ~ok! ~fail ~fail!)))
+
+(defn- ok-with-msgs [ok msgs]
+  (if (seq msgs)
+    (fn [state value msgs']
+      (ok state value (concat msgs msgs')))
+    ok))
+
+(defn- fail-with-msgs [fail msgs]
+  (if (seq msgs)
+    (fn [state msgs']
+      (fail state (concat msgs msgs')))
+    fail))
 
 (defn bind [p f]
-  (fn [state reply]
-    (letfn [(ok [s v e]
-              (continue (f v) s (with-errors reply e)))
-            (ok! [s v _]
-              (continue (f v) s (reply/with reply :ok :ok! :error :error!)))]
-      (continue p state (reply/with reply :ok ok :ok! ok!)))))
+  (fn [state ok ok! fail fail!]
+    (letfn [(ok' [state' value msgs]
+              (continue (f value) state'
+                        (ok-with-msgs ok msgs) ok!
+                        (fail-with-msgs fail msgs) fail!))
+            (ok!' [state' value msgs]
+              (continue (f value) state'
+                        (ok-with-msgs ok! msgs) ok!
+                        (fail-with-msgs fail! msgs) fail!))]
+      (continue p state ok' ok!' fail fail!))))
 
 (defn- emit-let [bindings body]
-  (let [[binding p] (take 2 bindings)]
+  (core/let [[binding p] (take 2 bindings)]
     (if (= 2 (count bindings))
+      ;; TODO Emit "do" body?
       `(bind ~p (fn [~binding] ~@body))
       `(bind ~p (fn [~binding] ~(emit-let (drop 2 bindings) body))))))
 
-(defmacro plet
+;; TODO: Rename to `let`
+(defmacro with
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
   [bindings & body]
-  (assert (vector? bindings) "with requires a vector for its binding")
-  (assert (even? (count bindings)) "with requires an even number of forms in binding vector")
-  (assert (some? body) "with requires a body")
+  {:pre [(vector? bindings)
+         (even? (count bindings))
+         (some? body)]}
   (emit-let bindings body))
 
-;; fparsec: >>., .>>, .>>.
-;; sequence of two parsers, returning either or both results.
-;; .>>.: like (cat p1 p2)
-;; parsesso: `>>.` is called `after`
-
-;; TODO: Implement without recursion; like * combinator?
-(defn pseq*
+;; TODO: Implement like * combinator, with a reducing function
+(defn series
+  "The parser `(series ps)` applies the parsers `ps` in sequence."
   ([ps]
-   (pseq* ps cons))
+   (series ps cons))
   ([ps f]
    (if-let [p (first ps)]
-     (plet [x p, xs (pseq* (next ps) f)]
+     (with [x p, xs (series (next ps) f)]
        (return (f x xs)))
      pnil)))
 
-(defn pseq
+(defn group
   ([p1] p1)
   ([p1 p2]
-   (pseq* (list p1 p2)))
+   (series (list p1 p2)))
   ([p1 p2 p3 & more]
-   (pseq* (list* p1 p2 p3 more))))
+   (series (list* p1 p2 p3 more))))
 
 ;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
 (defn pipe
   ([p f]
-   (fn [state reply]
-     (letfn [(ok [s v e]
-               (reply/ok reply s (f v) e))
-             (ok! [s v e]
-               (reply/ok! reply s (f v) e))]
-       (continue p state (reply/with reply :ok ok :ok! ok!)))))
+   (letfn [(wrap-ok [ok]
+             (fn [state value msgs]
+               (ok state (f value) msgs)))]
+     (fn [state ok ok! fail fail!]
+       (continue p state (wrap-ok ok) (wrap-ok ok!) fail fail!))))
   ([p1 p2 f]
-   (pipe (pseq* (list p1 p2)) #(apply f %)))
+   (pipe (group p1 p2) #(f (first %) (second %))))
   ([p1 p2 p3 & more]
-   (let [args (list* p1 p2 p3 more)]
-     (pipe (pseq* (butlast args)) #(apply (last args) %)))))
+   (core/let [args (list* p1 p2 p3 more)]
+     (pipe (series (butlast args)) #(apply (last args) %)))))
+
+(defn- emit-do* [[p & ps]]
+  (if (seq ps)
+    `(bind ~p (fn [~'_] ~(emit-do* ps)))
+    p))
+
+(defn- emit-do [ps]
+  (if (seq ps)
+    (emit-do* ps)
+    `pnil))
+
+;; fparsec: >>.
+;; parsesso: after
+;; Would be cool to call this `do`, but this fails
+(defmacro >> [& body]
+  (emit-do body))
+
+;; fparsec: >>., .>>, .>>.
+;; sequence of two parsers, returning either or both results.
+;; .>>.: like (cat p1 p2)
+;; fparsec: between
+
+(comment
+  (run (>> (return 1) (return 2)) "")
+
+  )
 
 ;;---------------------------------------------------------
 ;; Parsing alternatives and recovering from errors
 
-(defn- backtracking
-  "Returns a reply continuation that backtracks to `state`."
-  [reply state]
-  (letfn [(error! [s errors]
-            (reply/error reply state
-                         (error/nested (state/position s)
-                                       (state/user-state s)
-                                       errors)))]
-    (reply/with reply :error! error!)))
+(defn- fail-backtrack [fail state]
+  (fn [state' msgs]
+    (fail state (error/nested (state/position state')
+                              (state/user-state state')
+                              msgs))))
 
 ;; TODO: Other fparsec-style backtracking operators
 ;; fparsec: >>=?, >>? (should be >>.?), .>>.?
@@ -129,21 +161,21 @@
 ;; "with a non‐fatal error and without changing the parser state"
 ;; alternate names: try, ptry, recover
 (defn attempt [p]
-  (fn [state reply]
-    (continue p state (backtracking reply state))))
+  (fn [state ok ok! fail _]
+    (continue p state ok ok! fail (fail-backtrack fail state))))
 
 (defn- alt2
   ([p1 p2]
    (alt2 p1 p2 concat))
-  ([p1 p2 errors-fn]
-   (fn [state reply]
-     (letfn [(error1 [s1 e1]
-               (letfn [(ok2 [s2 v2 e2]
-                         (reply/ok reply s2 v2 e2))
-                       (error2 [s2 e2]
-                         (reply/error reply s2 (errors-fn e1 e2)))]
-                 (continue p2 s1 (reply/with reply :ok ok2 :error error2))))]
-       (continue p1 state (reply/with reply :error error1))))))
+  ([p1 p2 merge-msgs]
+   (fn [state ok ok! fail fail!]
+     (letfn [(fail1 [state1 msgs1]
+               (letfn [(ok2 [state2 value2 msgs2]
+                         (ok state2 value2 (merge-msgs msgs1 msgs2)))
+                       (fail2 [state2 msgs2]
+                         (fail state2 (merge-msgs msgs1 msgs2)))]
+                 (continue p2 state1 ok2 ok! fail2 fail!)))]
+       (continue p1 state ok ok! fail1 fail!)))))
 
 ;; fparsec: <|>
 (defn alt
@@ -158,14 +190,14 @@
 ;; fparsec: choice, choiceL
 ;; "choiceL is slightly faster than choice, because it doesn’t
 ;; have to aggregate error messages."
-(defn alt*
+(defn alts
   ([ps]
    (if-let [p (first ps)]
      (reduce alt2 p (next ps))
      pnil))
   ([ps label]
    (if-let [p (first ps)]
-     (let [errors-fn (constantly (error/expected label))]
+     (core/let [errors-fn (constantly (error/expected label))]
        (reduce #(alt2 %1 %2 errors-fn) p (next ps)))
      pnil)))
 
@@ -181,24 +213,24 @@
 ;; Customizing error messages
 
 (defn fail [message]
-  (let [errors (error/message message)]
-    (fn [state reply]
-      (reply/error reply state errors))))
+  (core/let [msgs (error/message message)]
+    (fn [state _ _ fail _]
+      (fail state msgs))))
 
 ;; fparsec: <?>
 (defn expected
   "If `p` does not change the parser state, the errors are
    replaced with `(expected label)."
   [p label]
-  (let [errors (error/expected label)]
-    (fn [state reply]
-      (letfn [(ok [s v _]
-                (reply/ok reply s v errors))
-              (error [s _]
-                (reply/error reply s errors))]
-        (continue p state (reply/with reply :ok ok :error error))))))
+  (core/let [msgs (error/expected label)]
+    (fn [state ok ok! fail fail!]
+      (letfn [(ok' [state' value _]
+                (ok state' value msgs))
+              (fail' [state' _]
+                (fail state' msgs))]
+        (continue p state ok' ok! fail' fail!)))))
 
-;; fparsec: <??> -- compound when p's reply is `error!`
+;; fparsec: <??> -- compound when p's reply is `fail!` (name `expected!`?)
 
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
@@ -209,13 +241,13 @@
     (seq? x) (concat x xs)
     :else    (cons x xs)))
 
-;; like pseq, but flattens
+;; like group, but flattens
 (defn cat
   ([p1] p1)
   ([p1 p2]
-   (pseq* (list p1 p2) cat-cons))
+   (series (list p1 p2) cat-cons))
   ([p1 p2 p3 & more]
-   (pseq* (list* p1 p2 p3 more) cat-cons)))
+   (series (list* p1 p2 p3 more) cat-cons)))
 
 ;; alternative names: opt, maybe
 (defn ?
@@ -225,10 +257,10 @@
   ([p not-found]
    (alt2 p (return not-found))))
 
-(defn- state-unchanged-exception [pname p]
-  (ex-info (str "Parser supplied to '" pname "' succeeded without changing the parser state")
+(defn- state-unchanged-exception [sym p]
+  (ex-info (str "Parser supplied to '" sym "' succeeded without changing the parser state")
            {:type ::state-unchanged
-            :parser pname
+            :parser sym
             :arg p}))
 
 ;; Ideas:
@@ -245,31 +277,31 @@
 
    Tries to guard against an infinite loop by throwing an exception
    if `p` succeeds without changing the parser state, reporting a
-   `state-unchanged-exception` with the parser name `pname`.
+   `state-unchanged-exception` with the parser name `sym`.
 
    When `p` fails on the first call (without changing the state),
    i.e. when `p` succeeded zero times, calls
-   `(zero reply state errors)`, so that implementations can succeed
-   or fail."
-  [pname zero f p]
-  (letfn [(ok [_ _ _]
-            (throw (state-unchanged-exception pname p)))]
-    (fn [state reply]
-      (letfn [(error1 [s1 e1]
-                (zero reply s1 e1))
+   `(zero state msgs ok fail)`, so that implementations
+   can succeed or fail."
+  [sym zero f p]
+  (letfn [(ok-throw [_ _ _]
+            (throw (state-unchanged-exception sym p)))]
+    (fn [state ok ok! fail fail!]
+      (letfn [(fail0 [state' msgs]
+                (zero state' msgs ok fail))
               (make-ok! [result]
-                (fn ok! [s1 v1 e1]
-                  (let [result (f result v1)
-                        error2 (fn error [s2 e2]
-                                 (reply/ok reply s2 (f result) (concat e1 e2)))]
-                    (continue p s1 (reply/with reply
-                                               :ok ok
-                                               :ok! (make-ok! result)
-                                               :error error2)))))]
-        (continue p state (reply/with reply
-                                      :ok ok
-                                      :ok! (make-ok! (f))
-                                      :error error1))))))
+                (fn [state value msgs]
+                  (core/let [result (f result value)
+                             fail' (fn [state' msgs']
+                                     (ok! state' (f result) (concat msgs msgs')))]
+                    (continue p state ok-throw (make-ok! result) fail' fail!))))]
+        (continue p state ok-throw (make-ok! (f)) fail0 fail!)))))
+
+(defn- zero-ok [state msgs ok _]
+  (ok state nil msgs))
+
+(defn- zero-fail [state msgs _ fail]
+  (fail state msgs))
 
 (defn- accumulate
   "Reducing function that collects input in a vector.
@@ -278,30 +310,35 @@
   ([coll] (persistent! coll))
   ([coll x] (conj! coll x)))
 
-(defn- many [pname zero p]
-  (reduce-many pname zero accumulate p))
-
-(defn- zero-ok [reply state errors]
-  (reply/ok reply state nil errors))
-
-;; TODO: Rename to just `*`
-(defn p*
+(defn *
   "Zero or more."
   [p]
-  (many `p* zero-ok p))
+  (reduce-many `* zero-ok accumulate p))
 
-;; TODO: Rename to just `+`
-(defn p+
+(defn +
   "One or more."
   [p]
-  (many `p+ reply/error p))
+  (reduce-many `+ zero-fail accumulate p))
 
-(defn pmin [p min])
-(defn pmax [p max])
+(defn max [p n]
+  (cond
+    (< n 1) empty
+    (= n 1) (? (pipe p list))
+    :else   (? (pipe p (max (dec n) p) cons))))
 
 (defn repeat
-  ([p n])
-  ([p min max]))
+  {:arglists '([p n] [p min max])}
+  ([p n]
+   (series (core/repeat n p)))
+  ([p min max-n]
+   {:pre [(<= min max-n)]}
+   (core/let [d (- max-n min)]
+     (if (zero? d)
+       (repeat p min)
+       (cat (repeat p min) (max p d))))))
+
+(defn min [p n]
+  (cat (repeat p n) (* p)))
 
 ;; TODO: Skip variants
 
@@ -309,25 +346,34 @@
 ;; fparsec: chainl, chainr, + variants
 
 ;;---------------------------------------------------------
-;; Forward declaration / recursion
+;; Lazy / recursive
 
-;; alternate names: do, do-p
-(defmacro pdo [& body]
-  `(fn [state# reply#]
-     (continue (do ~@body) state# reply#)))
+;; Note that we can use #'var as well
+(defmacro lazy [& body]
+  `(core/let [p# (delay ~@body)]
+     (fn [state# ok# ok!# fail# fail!#]
+       (continue (force p#) state# ok# ok!# fail# fail!#))))
 
 ;; fparsec: createParserForwardedToRef
-(defn pdelay
-  "Returns `[p preset!]`, with the parser `p` forwarding all calls
-   to an unrealized parser `q` that can later be set using `(preset! q)`.
-   Useful to construct recursive parsers."
-  []
-  (let [pref (atom pnil)]
-    (letfn [(p [state reply]
-              (continue @pref state reply))
-            (preset! [p]
-              (reset! pref p))]
-      (list p preset!))))
+(defn ref
+  "Returns a parser that forwards all calls to the parser returned
+   by `@ref`.  Useful to construct recursive parsers."
+  [ref]
+  (fn [state ok ok! fail fail!]
+    (continue @ref state ok ok! fail fail!)))
+
+(defn mut
+  "Returns a mutable parser that forwards all calls to an encapsulated
+   parser `p`.  Call the returned parser function with one arg to reset
+   `p`.  Useful to construct recursive parsers."
+  ([]
+   (mut pnil))
+  ([p]
+   (core/let [ref (atom p)]
+     (fn
+       ([p'] (reset! ref p'))
+       ([state ok ok! fail fail!]
+        (continue @ref state ok ok! fail fail!))))))
 
 (defn rec
   "Creates a recursive parser.  Calls `f` with one arg, a parser to recur,
@@ -336,11 +382,11 @@
    It is assumed that `f` uses `p/alt` or similar to eventually stop the
    recursion."
   [f]
-  (let [[p preset!] (pdelay)]
-    (preset! (f p))))
+  (core/let [vol (volatile! pnil)]
+    (vreset! vol (f (ref vol)))))
 
 ;;---------------------------------------------------------
-;; Characters
+;; Tokens
 
 ;; fparsec: normalises newlines
 ;; alternate names: match
@@ -348,98 +394,32 @@
   ([pred]
    (satisfy pred nil))
   ([pred label]
-   (let [error (if label
-                 (let [e (first (error/expected label))]
-                   (fn [reply state errors]
-                     (reply/error reply state (cons e errors))))
-                 reply/error)]
-     (fn [state reply]
-       (if-let [c (state/peek-char state)]
-         (if (pred c)
-           (reply/ok! reply (state/skip-char state) c)
-           (error reply state (error/unexpected c)))
-         (error reply state error/unexpected-eof))))))
+   (core/let [wrap-msgs (if label
+                          (core/let [msg (first (error/expected label))]
+                            #(cons msg %))
+                          identity)]
+     (fn [state _ ok! fail _]
+       (if-let [token (state/peek-char state)]
+         (if (pred token)
+           (ok! (state/skip-char state) token nil)
+           (fail state (wrap-msgs (error/unexpected token))))
+         (fail state (wrap-msgs error/unexpected-eof)))))))
 
 (def eof
-  (fn [state reply]
+  (fn [state ok _ fail _]
     (if (state/at-end? state)
-      (reply/ok reply state nil)
-      (reply/error reply state error/expected-eof))))
-
-;; fparsec: pchar
-;; fparsec: + skipChar, charReturn
-(defn char [c]
-  (satisfy #(= c %) c))
-
-;; fparsec: + skipAnyChar
-(def any-char
-  (fn [state reply]
-    (if-let [c (state/peek-char state)]
-      (reply/ok! reply (state/skip-char state) c)
-      (reply/error reply state error/unexpected-eof))))
-
-;; fparsec: anyOf, noneOf
-;; fparsec: + skip variants
-(defn any-of [chars]
-  ;; TODO: Construct a nicer error message
-  (satisfy (set chars) (str chars)))
-
-;; fparsec: asciiLower, asciiUpper, asciiLetter
-;; fparsec: lower, upper, letter
-;; fparsec: digit, hex, octal
-
-;; fparsec: tab
-;; fparsec: newline, skipNewline, newlineReturn + unicode variants
-;; fparsec: spaces, spaces1 + unicode variants
-
-;;---------------------------------------------------------
-;; strings
-
-;; fparsec: pstring
-;; fparsec: + skipString, stringReturn, CI variants,
-;;   anyString, skipAnyString
-(defn string [s]
-  {:pre [(seq s)
-         (not (re-find #"[\r\n]" s))]}
-  (let [length       (count s)
-        errors (error/expected-str s)
-        errors-eof (cons (first error/unexpected-eof) errors)]
-    (fn [state reply]
-      (if (state/matches? state s)
-        (reply/ok! reply (state/skip* state length) s)
-        (if (state/at-end? state)
-          (reply/error reply state errors-eof)
-          (reply/error reply state errors))))))
-
-;; fparsec: restOfLine, skipRestOfLine
-;; fparsec: charsTillString
-#_(defn chars-till-str [s skip? max-count])
-
-;; fparsec: manySatisfy
-;; fparsec: manySatisfy2 -- different pred for first character
-;; fparsec: many1Satisfy: one or more
-;; fparsec: manyMinMaxSatisfy
-#_(defn *match
-  "Parses a sequence of zero or more characters satisfying `pred`,
-   and returns them as a string."
-  [pred])
-
-;; fparsec: regex
-;; fparsec: identifier
-
-;; fparsec: combine parsers to return strings
-;;   manyChars, manyStrings, skipped
-
-;; fparsec: number parsers (int, float)
+      (ok state nil nil)
+      (fail state error/expected-eof))))
 
 (comment
-  (defprotocol IParserFactory
-    (->parser [_]))
+  ;; Idea: Coerce values to parser functions
+  (defprotocol IParserCoercible
+    (as-parser [_]))
 
-  (extend-protocol IParserFactory
+  #_{:clj-kondo/ignore [:unresolved-namespace]}
+  (extend-protocol IParserCoercible
     #?(:clj String :cljs js/String)
-    (->parser [s]
-      ;; Construct similar to p/word
-      ))
-;;
+    (as-parser [s] (char/string s)))
+
+  ;;
   )
