@@ -81,6 +81,10 @@
 ;; Duplicate error messages and empty Expected...,
 ;; Unexpected... and Message messages are filtered out
 
+(defn merge-messages [msgs1 msgs2]
+  ;; TODO: Optimise
+  (concat msgs1 msgs2))
+
 (defn render-messages [msgs]
   ;; TODO: Sort/dedupe
   ;; TODO: combine with "or" / "one of"

@@ -7,27 +7,41 @@
 
 #?(:clj (set! *warn-on-reflection* true))
 
-(defn- parser-ok [_state value _msgs]
+(defn- ok-result [state value msgs]
+  {:status   :ok
+   :value    value
+   :position (state/position state)
+   :user     (state/user-state state)
+   :messages msgs})
+
+(defn- ok-value [_ value _]
   {:pre [(not (fn? value))]}
   value)
 
-(defn- parse-exception [state msgs]
-  (core/let [pos (state/position state)]
-    (ex-info (str "Parse Error: " (error/render-messages msgs)
-                  " at " pos)
-             {:type ::parse-error
-              :position pos
-              :messages msgs})))
+(defn- fail-result [state msgs]
+  {:status   :error
+   :position (state/position state)
+   :user     (state/user-state state)
+   :messages msgs})
 
-(defn- parser-fail [state msgs]
-  ;(throw (parse-exception state msgs))
-  (parse-exception state msgs))
+(defn- parser-exception [{:keys [position messages] :as result}]
+  (ex-info (str "Parse Error: " (error/render-messages messages)
+                " at " position)
+           (assoc result :type ::parse-error)))
 
-(defn run [p input]
+(defn- fail-exception [state msgs]
+  (throw (parser-exception (fail-result state msgs))))
+
+(defn- run-parser [p input ok fail]
   ;; TODO: initial state from input + opts
   (trampoline #(p (state/of-string input)
-                  parser-ok parser-ok
-                  parser-fail parser-fail)))
+                  ok ok fail fail)))
+
+(defn run [p input]
+  (run-parser p input ok-result fail-result))
+
+(defn parse [p input]
+  (run-parser p input ok-value fail-exception))
 
 ;;---------------------------------------------------------
 
@@ -50,13 +64,13 @@
 (defn- ok-with-msgs [ok msgs]
   (if (seq msgs)
     (fn [state value msgs']
-      (ok state value (concat msgs msgs')))
+      (ok state value (error/merge-messages msgs msgs')))
     ok))
 
 (defn- fail-with-msgs [fail msgs]
   (if (seq msgs)
     (fn [state msgs']
-      (fail state (concat msgs msgs')))
+      (fail state (error/merge-messages msgs msgs')))
     fail))
 
 (defn bind [p f]
@@ -88,37 +102,84 @@
          (some? body)]}
   (emit-let bindings body))
 
-;; TODO: Implement like * combinator, with a reducing function
+(defn- accumulate
+  "Reducing function that collects input in a vector.
+   Like `conj!`, but completes with a persistent collection."
+  ([] (transient []))
+  ([coll] (persistent! coll))
+  ([coll x] (conj! coll x)))
+
+;; ? Have a 2-arity ok without messages?
+;; saves us from merging messages
+;; maybe we can find patterns how we wrap "ok"?
+;; and create macros to help us with repetition?
+
+(defn- emit-pipe-body
+  [f ps prev-state prev-values prev-msgs ok ok! fail fail!]
+  (let [n           (inc (count prev-values))
+        sym         (fn [prefix] (symbol (str prefix n)))
+        state       (sym "state")
+        value       (sym "value")
+        msgs        (sym "msgs")
+        values      (conj prev-values value)
+        merged-msgs (cond->> msgs
+                      prev-msgs (list `error/merge-messages prev-msgs))
+        next-ps     (next ps)
+        ok-body     (if next-ps
+                      (emit-pipe-body f next-ps state
+                                      values merged-msgs
+                                      ok ok!
+                                      fail fail!)
+                      (list ok state (cons f values) merged-msgs))
+        ok!-body    (if next-ps
+                      (emit-pipe-body f next-ps state
+                                      values msgs
+                                      ok! ok!
+                                      fail! fail!)
+                      (list ok! state (cons f values) msgs))]
+    (list `continue (first ps) prev-state
+          (list `fn (sym "ok") [state value msgs] ok-body)
+          (list `fn (sym "ok!") [state value msgs] ok!-body)
+          fail fail!)))
+
+(defn- emit-pipe-parser [ps f]
+  (list `fn (symbol (str "pipe" (count ps)))
+        ['state 'ok 'ok! 'fail 'fail!]
+        (emit-pipe-body f ps 'state [] nil
+                        'ok 'ok! 'fail 'fail!)))
+
+(defmacro ^:private pipe-parser [& ps+f]
+  (emit-pipe-parser (butlast ps+f) (last ps+f)))
+
+;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
+(defn pipe
+  ([p f]
+   (pipe-parser p f))
+  ([p1 p2 f]
+   (pipe-parser p1 p2 f))
+  ([p1 p2 p3 f]
+   (pipe-parser p1 p2 p3 f))
+  ([p1 p2 p3 p4 f]
+   (pipe-parser p1 p2 p3 p4 f))
+  ([p1 p2 p3 p4 p5 f]
+   (pipe-parser p1 p2 p3 p4 p5 f)))
+
 (defn series
   "The parser `(series ps)` applies the parsers `ps` in sequence."
   ([ps]
    (series ps cons))
   ([ps f]
    (if-let [p (first ps)]
-     (with [x p, xs (series (next ps) f)]
-       (return (f x xs)))
+     (pipe p (series (next ps) f) f)
      pnil)))
 
+;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 (defn group
   ([p1] p1)
   ([p1 p2]
    (series (list p1 p2)))
   ([p1 p2 p3 & more]
    (series (list* p1 p2 p3 more))))
-
-;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
-(defn pipe
-  ([p f]
-   (letfn [(wrap-ok [ok]
-             (fn [state value msgs]
-               (ok state (f value) msgs)))]
-     (fn [state ok ok! fail fail!]
-       (continue p state (wrap-ok ok) (wrap-ok ok!) fail fail!))))
-  ([p1 p2 f]
-   (pipe (group p1 p2) #(f (first %) (second %))))
-  ([p1 p2 p3 & more]
-   (core/let [args (list* p1 p2 p3 more)]
-     (pipe (series (butlast args)) #(apply (last args) %)))))
 
 (defn- emit-do* [[p & ps]]
   (if (seq ps)
@@ -136,15 +197,9 @@
 (defmacro >> [& body]
   (emit-do body))
 
-;; fparsec: >>., .>>, .>>.
-;; sequence of two parsers, returning either or both results.
-;; .>>.: like (cat p1 p2)
+;; fparsec: .>> - return the first result
+;; fparsetc: .>>.: like (cat p1 p2)
 ;; fparsec: between
-
-(comment
-  (run (>> (return 1) (return 2)) "")
-
-  )
 
 ;;---------------------------------------------------------
 ;; Parsing alternatives and recovering from errors
@@ -166,7 +221,7 @@
 
 (defn- alt2
   ([p1 p2]
-   (alt2 p1 p2 concat))
+   (alt2 p1 p2 error/merge-messages))
   ([p1 p2 merge-msgs]
    (fn [state ok ok! fail fail!]
      (letfn [(fail1 [state1 msgs1]
@@ -263,14 +318,6 @@
             :parser sym
             :arg p}))
 
-;; Ideas:
-;; - generalise this to take a sequence of parsers.
-;;   so that we can also use that for pseq*
-;; - for many: use (repeat p'), wrapping p with a parser
-;;   that throws on 'ok', so that this detail can be contained
-;; - use `loop` and `run` each parser with a `reply`,
-;;   instead of using continuation-passing style (benchmark!)
-
 (defn- reduce-many
   "Repeatedly applies `p` until `p` fails.  Reduces the results
    produced by `p` using the reducing function `rf`.
@@ -293,7 +340,7 @@
                 (fn [state value msgs]
                   (core/let [result (f result value)
                              fail' (fn [state' msgs']
-                                     (ok! state' (f result) (concat msgs msgs')))]
+                                     (ok! state' (f result) (error/merge-messages msgs msgs')))]
                     (continue p state ok-throw (make-ok! result) fail' fail!))))]
         (continue p state ok-throw (make-ok! (f)) fail0 fail!)))))
 
@@ -302,13 +349,6 @@
 
 (defn- zero-fail [state msgs _ fail]
   (fail state msgs))
-
-(defn- accumulate
-  "Reducing function that collects input in a vector.
-   Like `conj!`, but completes with a persistent collection."
-  ([] (transient []))
-  ([coll] (persistent! coll))
-  ([coll x] (conj! coll x)))
 
 (defn *
   "Zero or more."
@@ -326,6 +366,7 @@
     (= n 1) (? (pipe p list))
     :else   (? (pipe p (max (dec n) p) cons))))
 
+;; fparsec: parray
 (defn repeat
   {:arglists '([p n] [p min max])}
   ([p n]
