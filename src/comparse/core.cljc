@@ -102,12 +102,16 @@
          (some? body)]}
   (emit-let bindings body))
 
-(defn- accumulate
+(defn- vec-rf
   "Reducing function that collects input in a vector.
    Like `conj!`, but completes with a persistent collection."
   ([] (transient []))
   ([coll] (persistent! coll))
   ([coll x] (conj! coll x)))
+
+(def ^:private ignore
+  "Ignores all args and returns `nil`.  Useful for skip parsers."
+  (constantly nil))
 
 ;; ? Have a 2-arity ok without messages?
 ;; saves us from merging messages
@@ -117,11 +121,12 @@
 ;; Move parsers like these to an `advanced` namespace
 ;; to make them available to experts?
 ;; TODO: Also provide a version taking a `xform`?
+;; TODO: Support reduced?
 (defn- reduce-series
   "Creates a parser that runs `ps` in sequence, reducing their return
    values with the reducing function `f`."
   [f ps]
-  (letfn [(runner [p run-next]
+  (letfn [(run-fn [p run-next]
             (fn [result msgs state ok ok! fail fail!]
               (continue p state
                         (fn ok' [state' value' msgs']
@@ -142,7 +147,7 @@
             (ok state (f result) msgs))
           (compile [ps]
             (if-let [p (first ps)]
-              (runner p (compile (next ps)))
+              (run-fn p (compile (next ps)))
               complete))]
     (let [run (compile ps)]
       (fn [state ok ok! fail fail!]
@@ -150,32 +155,34 @@
 
 (defn- emit-pipe-body
   [f ps prev-state prev-values prev-msgs ok ok! fail fail!]
-  (let [n           (inc (count prev-values))
-        sym         (fn [prefix] (symbol (str prefix n)))
-        state       (sym "state")
-        value       (sym "value")
-        msgs        (sym "msgs")
+  (let [depth       (inc (count prev-values))
+        make-sym    (fn [prefix] (symbol (str prefix depth)))
+        state       (make-sym "state")
+        value       (make-sym "value")
+        msgs        (make-sym "msgs")
         values      (conj prev-values value)
         merged-msgs (cond->> msgs
                       prev-msgs (list `error/merge-messages prev-msgs))
-        next-ps     (next ps)
-        ok-body     (if next-ps
-                      (emit-pipe-body f next-ps state
-                                      values merged-msgs
-                                      ok ok!
-                                      fail fail!)
-                      (list ok state (cons f values) merged-msgs))
-        ok!-body    (if next-ps
-                      (emit-pipe-body f next-ps state
-                                      values msgs
-                                      ok! ok!
-                                      fail! fail!)
-                      (list ok! state (cons f values) msgs))]
+        next-ps     (next ps)]
     (list `continue (first ps) prev-state
-          (list `fn (sym "ok") [state value msgs] ok-body)
-          (list `fn (sym "ok!") [state value msgs] ok!-body)
-          (list `fn (sym "fail!") [state msgs]
-                (list fail state merged-msgs))
+          (list `fn (make-sym "ok") [state value msgs]
+                (if next-ps
+                  (emit-pipe-body f next-ps state
+                                  values merged-msgs
+                                  ok ok!
+                                  fail fail!)
+                  (list ok state (cons f values) merged-msgs)))
+          (list `fn (make-sym "ok!") [state value msgs]
+                (if next-ps
+                  (emit-pipe-body f next-ps state
+                                  values msgs
+                                  ok! ok!
+                                  fail! fail!)
+                  (list ok! state (cons f values) msgs)))
+          (if prev-msgs
+            (list `fn (make-sym "fail!") [state msgs]
+                  (list fail state merged-msgs))
+            fail)
           fail!)))
 
 (defn- emit-pipe-parser [ps f]
@@ -188,7 +195,7 @@
   (emit-pipe-parser (butlast ps+f) (last ps+f)))
 
 (comment
-  (emit-pipe-parser '[p1 p2 p3] 'f)
+  (emit-pipe-parser '[p1 p2 p3 p4 p5] 'f)
   ;
   )
 
@@ -199,20 +206,26 @@
   ([p1 p2 f]
    (pipe-parser p1 p2 f))
   ([p1 p2 p3 f]
-   (pipe-parser p1 p2 p3 f)))
+   (pipe-parser p1 p2 p3 f))
+  ([p1 p2 p3 p4 & more]
+   (let [ps (list* p1 p2 p3 p4 (butlast more))
+         f  (last more)]
+     (reduce-series (completing conj #(apply f %)) ps))))
 
 (defn series
   "The parser `(series ps)` applies the parsers `ps` in sequence."
   [ps]
-  (reduce-series accumulate ps))
+  (reduce-series vec-rf ps))
 
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 (defn group
-  ([p1] p1)
+  ([p] p)
   ([p1 p2]
-   (series (list p1 p2)))
-  ([p1 p2 p3 & more]
-   (series (list* p1 p2 p3 more))))
+   (pipe p1 p2 list))
+  ([p1 p2 p3]
+   (pipe p1 p2 p3 list))
+  ([p1 p2 p3 p4 & more]
+   (series (list* p1 p2 p3 p4 more))))
 
 ;; fparsec: >>.
 ;; parsesso: after
@@ -231,18 +244,18 @@
 ;;---------------------------------------------------------
 ;; Parsing alternatives and recovering from errors
 
+(defn- nested-error [state msgs]
+  (error/nested (state/position state)
+                (state/user-state state)
+                msgs))
+
 (defn- ok-backtrack [ok state value]
   (fn [state' msgs]
-    (ok state value
-        (error/nested (state/position state')
-                      (state/user-state state')
-                      msgs))))
+    (ok state value (nested-error state' msgs))))
 
 (defn- fail-backtrack [fail state]
   (fn [state' msgs]
-    (fail state (error/nested (state/position state')
-                              (state/user-state state')
-                              msgs))))
+    (fail state (nested-error state' msgs))))
 
 ;; TODO: Other fparsec-style backtracking operators
 ;; fparsec: >>=?, >>? (should be >>.?), .>>.?
@@ -399,12 +412,18 @@
 (defn *
   "Zero or more."
   [p]
-  (reduce-many `* zero-ok accumulate p))
+  (reduce-many `* zero-ok vec-rf p))
 
 (defn +
   "One or more."
   [p]
-  (reduce-many `+ zero-fail accumulate p))
+  (reduce-many `+ zero-fail vec-rf p))
+
+(defn skip* [p]
+  (reduce-many `skip* zero-ok ignore p))
+
+(defn skip+ [p]
+  (reduce-many `skip+ zero-fail ignore p))
 
 (defn max [p n]
   (cond

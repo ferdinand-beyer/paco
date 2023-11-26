@@ -4,6 +4,15 @@
             [criterium.core :as criterium]))
 
 (comment
+  (p/parse (p/pipe (c/char \1)
+                   (c/char \2)
+                   (c/char \3)
+                   (c/char \4)
+                   (c/char \5)
+                   (fn [& args]
+                     (zipmap args [:a :b :c :d :e :f :g])))
+           "12345678")
+
   (p/parse (p/>> (c/string "Just")
                  (c/char \space)
                  (c/string "do"))
@@ -135,6 +144,12 @@
                  (c/string "foox"))]
     (criterium/quick-bench
      (p/parse p "foox")))
+
+  (p/parse (-> (c/char \a)
+               (p/skip* )
+               (p/cat (c/char \b))
+               (p/pipe first))
+           "aaaaaaaaaab")
 
 ;;
   )
