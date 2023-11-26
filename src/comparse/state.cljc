@@ -1,5 +1,6 @@
 (ns comparse.state
-  (:refer-clojure :exclude [peek]))
+  (:refer-clojure :exclude [peek])
+  #?(:cljs (:require [goog.string :as gstr])))
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -49,23 +50,31 @@
   (index [_] index)
   (peek [_] (.charAt input index))
   (skip [_ n]
-    (let [new-index (unchecked-add index n)]
-      (if (< new-index (.length input))
+    (let [new-index (unchecked-add index n)
+          length    (#?(:clj .length :cljs .-length) input)]
+      (if (< new-index length)
         (StringStream. input new-index)
-        (EndStream. (.length input)))))
+        (EndStream. length))))
 
   ICharStream
   (peek-str [_ n]
     (subs input index
           (min (unchecked-add index n)
-               (.length input))))
+               (#?(:clj .length :cljs .-length) input))))
   (matches-str? [_ s]
-    (.regionMatches input index s 0 (.length ^String s)))
+    #?(:clj  (.regionMatches input index s 0 (.length ^String s))
+       :cljs (let [end (unchecked-add index (.-length s))]
+               (when (<= end (.-length input))
+                 (= (.substring input index end) s)))))
   (matches-str-ic? [_ s]
-    (.regionMatches input true index s 0 (.length ^String s))))
+    #?(:clj  (.regionMatches input true index s 0 (.length ^String s))
+       :cljs (let [end (unchecked-add index (.-length s))]
+               (when (<= end (.-length input))
+                 (gstr/caseInsensitiveEquals (.substring input index end) s))))))
 
 (defn string-stream [^String input]
-  (if (.isEmpty input)
+  (if #?(:clj  (.isEmpty input)
+         :cljs (zero? (.-length input)))
     (EndStream. 0)
     (StringStream. input 0)))
 
@@ -73,7 +82,6 @@
 ;; Position
 
 (defprotocol IPosition
-  (char-index [pos])
   (line-index [pos])
   (column-index [pos]))
 
