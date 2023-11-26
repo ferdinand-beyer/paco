@@ -494,23 +494,6 @@
 ;;---------------------------------------------------------
 ;; Tokens
 
-;; fparsec: normalises newlines
-;; alternate names: match
-(defn satisfy
-  ([pred]
-   (satisfy pred nil))
-  ([pred label]
-   (core/let [wrap-msgs (if label
-                          (core/let [msg (first (error/expected label))]
-                            #(cons msg %))
-                          identity)]
-     (fn [state _ ok! fail _]
-       (if-let [token (state/peek-char state)]
-         (if (pred token)
-           (ok! (state/skip-char state) token nil)
-           (fail state (wrap-msgs (error/unexpected token))))
-         (fail state (wrap-msgs error/unexpected-eof)))))))
-
 (def eof
   (fn [state ok _ fail _]
     (if (state/at-end? state)

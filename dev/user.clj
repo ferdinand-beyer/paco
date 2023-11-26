@@ -53,7 +53,7 @@
                            (c/string "zz")))
            "foobuzz")
 
-  (p/parse (p/satisfy #{\a \b \c} "abc")
+  (p/parse (c/match #{\a \b \c} "abc")
            "x")
 
   (p/parse (c/any-of "abc") "x")
@@ -61,8 +61,8 @@
   (p/parse (p/cat (p/alt (c/string "foo")
                          (p/cat
                           (c/string "bar")
-                          (p/satisfy #{\1 \2 \3 \4 \5 \6 \7 \8 \9 \0}
-                                     "digit")))
+                          (c/match #{\1 \2 \3 \4 \5 \6 \7 \8 \9 \0}
+                            "digit")))
                   (c/string "buzz"))
            "barbuzz")
 
@@ -146,7 +146,7 @@
      (p/parse p "foox")))
 
   (p/parse (-> (c/char \a)
-               (p/skip* )
+               (p/skip*)
                (p/cat (c/char \b))
                (p/pipe first))
            "aaaaaaaaaab")

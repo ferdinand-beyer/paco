@@ -28,7 +28,7 @@
 (defmacro bench-comparse [parser input]
   `(let [parser# ~parser
          input#  ~input]
-     (bench (p/run parser# input#))))
+     (bench (p/parse parser# input#))))
 
 (defmacro bench-parsesso [parser input]
   `(let [parser# ~parser
@@ -54,10 +54,10 @@
 ;; ## Return value without parsing ##
 
 (bench-comparse (p/return :x) "")
-;             Execution time mean : 71,963164 ns
-;    Execution time std-deviation : 3,689837 ns
-;   Execution time lower quantile : 65,273401 ns ( 2,5%)
-;   Execution time upper quantile : 75,114557 ns (97,5%)
+;             Execution time mean : 18,306604 ns
+;    Execution time std-deviation : 1,920469 ns
+;   Execution time lower quantile : 17,362660 ns ( 2,5%)
+;   Execution time upper quantile : 21,622863 ns (97,5%)
 
 (bench-parsesso (q/result :x) "")
 ;             Execution time mean : 64,838090 ns
@@ -81,7 +81,11 @@
 
 ;; ## Fail immediately without parsing ##
 
-(bench-comparse (p/fail :x) "")
+(bench (p/run (p/fail :x) ""))
+;             Execution time mean : 44,989624 ns
+;    Execution time std-deviation : 0,262919 ns
+;   Execution time lower quantile : 44,768464 ns ( 2,5%)
+;   Execution time upper quantile : 45,426122 ns (97,5%)
 
 (bench (q/parse* (q/fail :x) []))
 ;             Execution time mean : 81,478078 ns
@@ -106,7 +110,7 @@
 
 ;; ## Parse token ##
 
-(bench-comparse (p/satisfy #(= \a %)) "abc")
+(bench-comparse (c/match #(= \a %)) "abc")
 ;             Execution time mean : 70,992962 ns
 ;    Execution time std-deviation : 4,885139 ns
 ;   Execution time lower quantile : 67,366876 ns ( 2,5%)
@@ -136,10 +140,10 @@
 ;; ## Parse word ##
 
 (bench-comparse (c/string "abc") "abc")
-;             Execution time mean : 83,544534 ns
-;    Execution time std-deviation : 1,485411 ns
-;   Execution time lower quantile : 81,694532 ns ( 2,5%)
-;   Execution time upper quantile : 85,199353 ns (97,5%)
+;             Execution time mean : 37,489351 ns
+;    Execution time std-deviation : 3,434824 ns
+;   Execution time lower quantile : 35,345999 ns ( 2,5%)
+;   Execution time upper quantile : 43,220018 ns (97,5%)
 
 (bench-parsesso (q/word "abc") "abc")
 ;             Execution time mean : 143,127655 ns
@@ -243,7 +247,7 @@
 
 ;; ## Parse `many` for long input ##
 
-(bench-comparse (p/* (p/satisfy #(= \a %))) -input-10000)
+(bench-comparse (p/* (c/match #(= \a %))) -input-10000)
 ;             Execution time mean : 356,890924 µs
 ;    Execution time std-deviation : 5,169162 µs
 ;   Execution time lower quantile : 351,230010 µs ( 2,5%)
