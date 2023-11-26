@@ -1,6 +1,16 @@
-{:aliases
+{:paths ["src" "resources"]
+ :aliases
  {:dev
   {:extra-deps {criterium/criterium {:mvn/version "0.4.6"}}}
+
+  :test
+  {:extra-paths ["test"]}
+
+  :kaocha
+  {:extra-deps {lambdaisland/kaocha      {:mvn/version "1.87.1366"}
+                lambdaisland/kaocha-cljs {:mvn/version "1.5.154"}}
+   :main-opts ["-m" "kaocha.runner"]}
+
   :bench
   {:extra-deps {com.github.strojure/parsesso {:mvn/version "1.2.2+295"}
                 org.blancas/kern             {:mvn/version "1.1.0"}

@@ -1,4 +1,6 @@
 .cache/
 .cpcache/
 .portal/
+node_modules/
+target/
 .nrepl-port
