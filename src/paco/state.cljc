@@ -45,7 +45,8 @@
 ;;---------------------------------------------------------
 ;; StringStream
 
-(deftype StringStream [^String input ^int index]
+(deftype StringStream [^String input
+                       ^#?(:clj int :cljs number) index]
   IStream
   (index [_] index)
   (peek [_] (.charAt input index))
@@ -85,7 +86,8 @@
   (line-index [pos])
   (column-index [pos]))
 
-(defrecord Position [^int line ^int column]
+(defrecord Position [^#?(:clj int :cljs number) line
+                     ^#?(:clj int :cljs number) column]
   Object
   (toString [_] (str "line " (unchecked-inc line)
                      ", column " (unchecked-inc column)))
@@ -100,7 +102,10 @@
 ;; ? Maybe support stream transform functions
 ;; - normalize newlines to \n
 
-(deftype State [stream ^int line ^int line-begin user-state]
+(deftype State [stream
+                ^#?(:clj int :cljs number) line
+                ^#?(:clj int :cljs number) line-begin
+                user-state]
   IStream
   (index [_] (index stream))
   (peek [_] (peek stream))
