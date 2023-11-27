@@ -78,3 +78,32 @@
         (testing "ignoring case"
           (is (state/matches-str-ic? s ""))
           (is (not (state/matches-str? s "E"))))))))
+
+(deftest skip-char
+  (testing "behaves like `(skip state 1)` when not at a newline"
+    (let [s (state/skip-char (state/of-string "example"))]
+      (is (= 1 (state/index s)))
+      (is (= 0 (state/line-index s)))
+      (is (= 1 (state/column-index s)))))
+
+  (testing "tracks Unix-style newlines"
+    (let [s (state/skip-char (state/of-string "\n"))]
+      (is (= 1 (state/index s)))
+      (is (= 1 (state/line-index s)))
+      (is (= 0 (state/column-index s)))))
+
+  (testing "tracks Mac-style newlines"
+    (let [s (state/skip-char (state/of-string "\r"))]
+      (is (= 1 (state/index s)))
+      (is (= 1 (state/line-index s)))
+      (is (= 0 (state/column-index s)))))
+
+  (testing "tracks Windows-style newlines"
+    (let [s (state/skip-char (state/of-string "\r\n"))]
+      (is (= 1 (state/index s)))
+      (is (= 0 (state/line-index s)))
+      (is (= 1 (state/column-index s)))
+      (let [s (state/skip-char s)]
+        (is (= 2 (state/index s)))
+        (is (= 1 (state/line-index s)))
+        (is (= 0 (state/column-index s)))))))

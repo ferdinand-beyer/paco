@@ -85,7 +85,7 @@
   (line-index [pos])
   (column-index [pos]))
 
-(deftype Position [^int line ^int column]
+(defrecord Position [^int line ^int column]
   Object
   (toString [_] (str "line " (unchecked-inc line)
                      ", column " (unchecked-inc column)))
