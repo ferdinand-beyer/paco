@@ -125,28 +125,40 @@
 ;;---------------------------------------------------------
 ;; String parsers
 
-(defn- match-str [s matches?]
-  {:pre [(seq s)
-           ;; So that we can skip without tracking lines.
-         (not (re-find #"[\r\n]" s))]}
-  (let [length   (count s)
-        msgs     (error/expected-str s)
-        eof-msgs (cons (first error/unexpected-eof) msgs)]
-    (fn [state _ ok! fail _]
-      (if (matches? state s)
-        (ok! (state/skip state length) s nil)
-        (if (state/at-end? state)
-          (fail state eof-msgs)
-          (fail state msgs))))))
+(defn- check-string-literal [s]
+  (when (empty? s)
+    (throw (ex-info "String literal cannot be empty" {})))
+  (when (re-find #"[\r\n]" s)
+    (throw (ex-info "String literal cannot contain newlines" {}))))
 
 ;; fparsec: pstring
 ;; fparsec: + skipString, stringReturn, CI variants,
 ;;   anyString, skipAnyString
 (defn string [s]
-  (match-str s state/matches-str?))
+  (check-string-literal s)
+  (let [length   (count s)
+        msgs     (error/expected-str s)
+        eof-msgs (cons (first error/unexpected-eof) msgs)]
+    (fn [state _ ok! fail _]
+      (if (state/matches-str? state s)
+        (ok! (state/skip state length) s nil)
+        (if (state/at-end? state)
+          (fail state eof-msgs)
+          (fail state msgs))))))
 
 (defn string-ic [s]
-  (match-str s state/matches-str-ic?))
+  (check-string-literal s)
+  (let [length   (count s)
+        msgs     (error/expected-str s) ;; TODO: expected-str-ic?
+        eof-msgs (cons (first error/unexpected-eof) msgs)]
+    (fn [state _ ok! fail _]
+      (if (state/matches-str-ic? state s)
+        (ok! (state/skip state length)
+             (state/peek-str state length)
+             nil)
+        (if (state/at-end? state)
+          (fail state eof-msgs)
+          (fail state msgs))))))
 
 ;; fparsec: restOfLine, skipRestOfLine
 ;; fparsec: charsTillString

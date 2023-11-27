@@ -53,3 +53,9 @@
   (are [ch] (chars/octal? ch) \0 \1 \5 \7)
   (are [ch] (not (chars/octal? ch)) \8 \9 \a \A\Æ \æ \ß \? \u0000)
   (is (= \0 (p/parse chars/octal "0733"))))
+
+(deftest string
+  (is (= "foo" (p/parse (chars/string "foo") "foobar"))))
+
+(deftest string-ic
+  (is (= "FoO" (p/parse (chars/string-ic "foo") "FoObAr"))))
