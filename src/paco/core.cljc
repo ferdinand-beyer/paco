@@ -1,9 +1,9 @@
-(ns comparse.core
+(ns paco.core
   (:refer-clojure :exclude [* + cat max min ref repeat])
   (:require [clojure.core :as core]
-            [comparse.error :as error]
-            [comparse.state :as state])
-  #?(:require-macros [comparse.core :refer [continue lazy with]]))
+            [paco.error :as error]
+            [paco.state :as state])
+  #?(:require-macros [paco.core :refer [continue lazy with]]))
 
 #?(:clj (set! *warn-on-reflection* true))
 

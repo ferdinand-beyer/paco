@@ -1,4 +1,4 @@
-{:deps {com.fbeyer/comparse {:local/root "."}}
+{:deps {com.fbeyer/paco {:local/root "."}}
  :tasks {test (run '-test:all #_{:parallel true})
          -test:all {:depends [test:clj test:cljs test:bb]}
          test:clj (clojure "-M:test:kaocha" "unit")

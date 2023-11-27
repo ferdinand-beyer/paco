@@ -1,4 +1,4 @@
-(ns comparse.state
+(ns paco.state
   (:refer-clojure :exclude [peek])
   #?(:cljs (:require [goog.string :as gstr])))
 

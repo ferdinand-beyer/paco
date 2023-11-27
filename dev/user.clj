@@ -1,6 +1,6 @@
 (ns user
-  (:require [comparse.chars :as c]
-            [comparse.core :as p]
+  (:require [paco.chars :as c]
+            [paco.core :as p]
             [criterium.core :as criterium]))
 
 (comment

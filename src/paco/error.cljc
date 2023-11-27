@@ -1,4 +1,4 @@
-(ns comparse.error
+(ns paco.error
   (:require [clojure.string :as str]))
 
 (defprotocol IMessage

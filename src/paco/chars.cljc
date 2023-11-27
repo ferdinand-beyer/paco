@@ -1,8 +1,8 @@
-(ns comparse.chars
+(ns paco.chars
   (:refer-clojure :exclude [char])
-  (:require [comparse.error :as error]
-            [comparse.state :as state])
-  #?(:cljs (:require-macros [comparse.chars :refer [test-ranges]])))
+  (:require [paco.error :as error]
+            [paco.state :as state])
+  #?(:cljs (:require-macros [paco.chars :refer [test-ranges]])))
 
 ;;---------------------------------------------------------
 ;; Character predicates

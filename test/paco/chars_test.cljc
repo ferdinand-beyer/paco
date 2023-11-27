@@ -1,7 +1,7 @@
-(ns comparse.chars-test
+(ns paco.chars-test
   (:require [clojure.test :refer [are deftest is]]
-            [comparse.chars :as chars]
-            [comparse.core :as p]))
+            [paco.chars :as chars]
+            [paco.core :as p]))
 
 ;; TODO: Test failures.  First add error reporting utils
 

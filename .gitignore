@@ -1,4 +1,5 @@
 .cache/
+.clj-kondo/com.fbeyer/paco/
 .cpcache/
 .portal/
 node_modules/

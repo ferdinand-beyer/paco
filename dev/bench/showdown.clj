@@ -1,7 +1,7 @@
 (ns bench.showdown
   (:require [blancas.kern.core :as k]
-            [comparse.chars :as c]
-            [comparse.core :as p]
+            [paco.chars :as c]
+            [paco.core :as p]
             [criterium.core :as criterium]
             [strojure.parsesso.char :as qc]
             [strojure.parsesso.parser :as q]
@@ -25,7 +25,7 @@
      :quick (criterium/quick-bench ~@body)
      (do ~@body)))
 
-(defmacro bench-comparse [parser input]
+(defmacro bench-paco [parser input]
   `(let [parser# ~parser
          input#  ~input]
      (bench (p/parse parser# input#))))
@@ -53,7 +53,7 @@
 
 ;; ## Return value without parsing ##
 
-(bench-comparse (p/return :x) "")
+(bench-paco (p/return :x) "")
 ;             Execution time mean : 18,306604 ns
 ;    Execution time std-deviation : 1,920469 ns
 ;   Execution time lower quantile : 17,362660 ns ( 2,5%)
@@ -110,7 +110,7 @@
 
 ;; ## Parse token ##
 
-(bench-comparse (c/match #(= \a %)) "abc")
+(bench-paco (c/match #(= \a %)) "abc")
 ;             Execution time mean : 70,992962 ns
 ;    Execution time std-deviation : 4,885139 ns
 ;   Execution time lower quantile : 67,366876 ns ( 2,5%)
@@ -139,7 +139,7 @@
 
 ;; ## Parse word ##
 
-(bench-comparse (c/string "abc") "abc")
+(bench-paco (c/string "abc") "abc")
 ;             Execution time mean : 37,489351 ns
 ;    Execution time std-deviation : 3,434824 ns
 ;   Execution time lower quantile : 35,345999 ns ( 2,5%)
@@ -183,7 +183,7 @@
 
 ;; ## Parse long word ##
 
-(bench-comparse (c/string -input-10000) -input-10000)
+(bench-paco (c/string -input-10000) -input-10000)
 ;             Execution time mean : 70,196175 ns
 ;    Execution time std-deviation : 5,924179 ns
 ;   Execution time lower quantile : 66,494457 ns ( 2,5%)
@@ -247,7 +247,7 @@
 
 ;; ## Parse `many` for long input ##
 
-(bench-comparse (p/* (c/match #(= \a %))) -input-10000)
+(bench-paco (p/* (c/match #(= \a %))) -input-10000)
 ;             Execution time mean : 356,890924 µs
 ;    Execution time std-deviation : 5,169162 µs
 ;   Execution time lower quantile : 351,230010 µs ( 2,5%)
@@ -291,7 +291,7 @@
 
 ;; ## The `alt` combinator ##
 
-(bench-comparse (p/alt (p/fail "a")
+(bench-paco (p/alt (p/fail "a")
                        (p/fail "b")
                        (p/return :x)) "")
 ;             Execution time mean : 141,159754 ns
@@ -327,7 +327,7 @@
 
 ;; ## Wrap with `expecting` ##
 
-(bench-comparse (-> (p/return :x) (p/expected "x")) "")
+(bench-paco (-> (p/return :x) (p/expected "x")) "")
 ;             Execution time mean : 78,954855 ns
 ;    Execution time std-deviation : 7,143476 ns
 ;   Execution time lower quantile : 74,021075 ns ( 2,5%)

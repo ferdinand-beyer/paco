@@ -1,1 +1,1 @@
-{:config-paths ["../resources/clj-kondo.exports/com.fbeyer/comparse"]}
+{:config-paths ["../resources/clj-kondo.exports/com.fbeyer/paco"]}

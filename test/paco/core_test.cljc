@@ -1,6 +1,6 @@
-(ns comparse.core-test
+(ns paco.core-test
   (:require [clojure.test :refer [deftest is]]
-            [comparse.core :as p]))
+            [paco.core :as p]))
 
 (deftest return
   (is (= :a (p/parse (p/return :a) ""))))

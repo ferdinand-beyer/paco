@@ -1,0 +1,2 @@
+{:lint-as {paco.core/let clojure.core/let
+           paco.core/with clojure.core/let}}

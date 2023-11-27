@@ -1,6 +1,6 @@
-(ns comparse.state-test
+(ns paco.state-test
   (:require [clojure.test :refer [deftest is testing]]
-            [comparse.state :as state]))
+            [paco.state :as state]))
 
 (deftest string-stream-navigation
   (let [s (state/string-stream "example")]

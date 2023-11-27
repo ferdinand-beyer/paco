@@ -1,2 +1,0 @@
-{:lint-as {comparse.core/let clojure.core/let
-           comparse.core/with clojure.core/let}}
