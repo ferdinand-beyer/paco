@@ -1,5 +1,5 @@
 (ns user
-  (:require [comparse.char :as c]
+  (:require [comparse.chars :as c]
             [comparse.core :as p]
             [criterium.core :as criterium]))
 

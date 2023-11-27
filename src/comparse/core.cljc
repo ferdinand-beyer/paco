@@ -212,6 +212,7 @@
          f  (last more)]
      (reduce-series (completing conj #(apply f %)) ps))))
 
+;; alternative names: g, group', groups
 (defn series
   "The parser `(series ps)` applies the parsers `ps` in sequence."
   [ps]

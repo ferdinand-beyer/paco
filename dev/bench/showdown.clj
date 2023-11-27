@@ -1,6 +1,6 @@
 (ns bench.showdown
   (:require [blancas.kern.core :as k]
-            [comparse.char :as c]
+            [comparse.chars :as c]
             [comparse.core :as p]
             [criterium.core :as criterium]
             [strojure.parsesso.char :as qc]
