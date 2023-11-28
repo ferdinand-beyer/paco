@@ -1,6 +1,7 @@
 (ns paco.chars
   (:refer-clojure :exclude [char])
-  (:require [paco.error :as error]
+  (:require [paco.core :as p]
+            [paco.error :as error]
             [paco.state :as state])
   #?(:cljs (:require-macros [paco.chars :refer [test-ranges]])))
 
@@ -69,13 +70,25 @@
        (if-let [ch (state/peek state)]
          (if (pred ch)
            (ok! (state/skip-char state) ch nil)
-           (fail state (wrap-msgs (error/unexpected ch))))
+           (fail state (wrap-msgs (error/unexpected-str (str ch)))))
          (fail state (wrap-msgs error/unexpected-eof)))))))
 
+(defn char-return [ch value]
+  ;; TODO: optimise for non-newline
+  (let [msgs (error/expected-str (str ch))]
+    (fn [state _ ok! fail _]
+      (if-let [ch' (state/peek state)]
+        (if (= ch ch')
+          (ok! (state/skip-char state) value nil)
+          (fail state (error/merge-messages (error/unexpected-str (str ch')) msgs)))
+        (fail state (error/merge-messages error/unexpected-eof msgs))))))
+
 ;; fparsec: pchar
-;; fparsec: + skipChar, charReturn
 (defn char [ch]
-  (match #(= ch %) ch))
+  (char-return ch ch))
+
+(defn skip-char [ch]
+  (char-return ch nil))
 
 ;; fparsec: + skipAnyChar
 (def any-char
@@ -145,6 +158,9 @@
         (if (state/at-end? state)
           (fail state eof-msgs)
           (fail state msgs))))))
+
+(defn string-return [ch x]
+  (p/>> (string ch) (p/return x)))
 
 (defn string-ic [s]
   (check-string-literal s)

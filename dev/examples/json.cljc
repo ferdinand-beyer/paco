@@ -1,4 +1,5 @@
 (ns examples.json
+  (:refer-clojure :exclude [array])
   (:require [paco.core :as p]
             [paco.chars :as c]
             [clojure.string :as str]))
@@ -6,7 +7,7 @@
 ;; TODO: skip-match
 ;; TODO: <??>, label fail! (aka, as)
 (def whitespace
-  (p/* (c/any-of " \r\n\t")))
+  (p/* (p/expected (c/any-of " \r\n\t") "whitespace")))
 
 ;; TODO: reduce to string (fparsec: manyChars, skipped)
 ;; TODO: (chars/range \0 \9)
@@ -25,59 +26,69 @@
        (->> (concat integer fraction exponent) str/join parse-double)
        (->> integer str/join parse-long)))))
 
-;; TODO: c/char-return
-;; TODO: (p/between p popen pclose)
+(defn- parse-int [s radix]
+  #?(:clj  (Long/parseLong s radix)
+     :cljs (js/parseInt s radix)))
+
+;; TODO: c/many-string
 (def string
-  (p/with [_ (c/char \")
-           s (p/* (p/alt (p/>> (c/char \\)
-                               (p/alt (c/any-of "\"\\/")
-                                      (p/>> (c/char \b) (p/return \backspace))
-                                      (p/>> (c/char \f) (p/return \formfeed))
-                                      (p/>> (c/char \n) (p/return \newline))
-                                      (p/>> (c/char \r) (p/return \return))
-                                      (p/>> (c/char \t) (p/return \tab))
-                                      (p/>> (c/char \u)
-                                            (p/pipe
-                                             (p/repeat c/hex 4)
-                                             (fn [chs]
-                                               (-> (str/join chs)
-                                                   (#?(:clj Long/parseLong
-                                                       :cljs js/parseInt)  16)
-                                                   char))))))
-                         (c/match #(not (or (#{\" \\} %)
-                                            (c/control? %))))))
-           _ (c/char \")]
-    (p/return (str/join s))))
+  (-> (p/* (p/alt (p/>> (c/skip-char \\)
+                        (p/alt (c/any-of "\"\\/")
+                               (c/char-return \b \backspace)
+                               (c/char-return \f \formfeed)
+                               (c/char-return \n \newline)
+                               (c/char-return \r \return)
+                               (c/char-return \t \tab)
+                               (p/>> (c/skip-char \u)
+                                     (p/pipe
+                                      (p/repeat c/hex 4)
+                                      (fn [chs]
+                                        (-> (str/join chs)
+                                            (parse-int 16)
+                                            char))))))
+                  (c/match #(not (or (#{\" \\} %)
+                                     (c/control? %))))))
+      (p/pipe str/join)
+      (p/between (c/skip-char \"))))
+
+(comment
+  (p/parse string "\"\"")
+  (p/parse string "\"foo\"")
+  (p/parse string "\"line 1\\nline 2\"")
+  ;;
+  )
 
 (declare value)
+
+(def ^:private skip-comma (c/skip-char \,))
 
 ;; TODO: p/sep-by
 (defn comma-sep [p]
   (p/? (p/with [x p
-                xs (p/* (p/>> (c/char \,) p))]
+                xs (p/* (p/>> skip-comma p))]
          (p/return (cons x xs)))))
 
 (def array
-  (p/with [_ (c/char \[)
+  (p/with [_ (c/skip-char \[)
            _ whitespace
            values (comma-sep value)
-           _ (c/char \])]
+           _ (c/skip-char \])]
     (p/return (into [] values))))
 
 (def object-entry
   (p/with [_ whitespace
            k string
            _ whitespace
-           _ (c/char \:)
+           _ (c/skip-char \:)
            v value]
     (p/return #?(:clj  (clojure.lang.MapEntry. k v)
                  :cljs (MapEntry. k v)))))
 
 (def object
-  (p/with [_ (c/char \{)
+  (p/with [_ (c/skip-char \{)
            _ whitespace
            entries (comma-sep object-entry)
-           _ (c/char \})]
+           _ (c/skip-char \})]
     (p/return (into {} entries))))
 
 ;; TODO: string-return
@@ -87,9 +98,9 @@
                       number
                       object
                       array
-                      (p/>> (c/string "true") (p/return true))
-                      (p/>> (c/string "false") (p/return false))
-                      (p/>> (c/string "null") p/pnil)]
+                      (c/string-return "true" true)
+                      (c/string-return "false" false)
+                      (c/string-return "null" nil)]
                      "value")
            _ whitespace]
     (p/return v)))
@@ -110,9 +121,10 @@
   (p/parse (comma-sep object-entry) "\"key\" : 19, \"bar\": false")
 
   (p/parse json "  ")
+  (p/parse json "[1 2]")
   (p/parse json "19")
   (p/parse json "[1, 2, false, null]")
-  (p/parse json "{\"foo\": 19, \"bar\" : false, \"x\": \"y\"}")
+  (p/parse json "{\"foo\": 19, \"bar\" : false, \"x\": [\"y\"]}")
 
   ;;
   )

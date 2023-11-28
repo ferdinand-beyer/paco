@@ -242,6 +242,12 @@
 ;; fparsetc: .>>.: like (cat p1 p2)
 ;; fparsec: between
 
+(defn between
+  ([p psurround]
+   (between p psurround psurround))
+  ([p popen pclose]
+   (pipe popen p pclose (fn [_ x _] x))))
+
 ;;---------------------------------------------------------
 ;; Parsing alternatives and recovering from errors
 
