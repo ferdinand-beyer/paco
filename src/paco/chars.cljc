@@ -63,25 +63,25 @@
    (match pred nil))
   ([pred label]
    (let [wrap-msgs (if label
-                     (let [msg (first (error/expected label))]
-                       #(cons msg %))
+                     (let [msg (error/expected label)]
+                       #(error/union msg %))
                      identity)]
      (fn [state _ ok! fail _]
        (if-let [ch (state/peek state)]
          (if (pred ch)
            (ok! (state/skip-char state) ch nil)
-           (fail state (wrap-msgs (error/unexpected-str (str ch)))))
+           (fail state (wrap-msgs (error/unexpected-input ch))))
          (fail state (wrap-msgs error/unexpected-eof)))))))
 
 (defn char-return [ch value]
   ;; TODO: optimise for non-newline
-  (let [msgs (error/expected-str (str ch))]
+  (let [msgs (error/expected-input ch)]
     (fn [state _ ok! fail _]
       (if-let [ch' (state/peek state)]
         (if (= ch ch')
           (ok! (state/skip-char state) value nil)
-          (fail state (error/merge-messages (error/unexpected-str (str ch')) msgs)))
-        (fail state (error/merge-messages error/unexpected-eof msgs))))))
+          (fail state (error/union (error/unexpected-input ch') msgs)))
+        (fail state (error/union error/unexpected-eof msgs))))))
 
 ;; fparsec: pchar
 (defn char [ch]
@@ -101,7 +101,7 @@
 ;; fparsec: + skip variants
 (defn any-of [chars]
   ;; TODO: Support a variant of match that takes a custom msgs fn
-  #_(map error/expected chars)
+  #_(map error/expected-input chars)
   (match (set chars) (str "any of '" chars "'")))
 
 (def ascii-upper
@@ -150,8 +150,8 @@
 (defn string [s]
   (check-string-literal s)
   (let [length   (count s)
-        msgs     (error/expected-str s)
-        eof-msgs (cons (first error/unexpected-eof) msgs)]
+        msgs     (error/expected-input s)
+        eof-msgs (error/union error/unexpected-eof msgs)]
     (fn [state _ ok! fail _]
       (if (state/matches-str? state s)
         (ok! (state/skip state length) s nil)
@@ -165,8 +165,8 @@
 (defn string-ic [s]
   (check-string-literal s)
   (let [length   (count s)
-        msgs     (error/expected-str s) ;; TODO: expected-str-ic?
-        eof-msgs (cons (first error/unexpected-eof) msgs)]
+        msgs     (error/expected-input s) ;; TODO: expected-str-ic?
+        eof-msgs (error/union error/unexpected-eof msgs)]
     (fn [state _ ok! fail _]
       (if (state/matches-str-ic? state s)
         (ok! (state/skip state length)
@@ -184,7 +184,7 @@
 ;; fparsec: manySatisfy2 -- different pred for first character
 ;; fparsec: many1Satisfy: one or more
 ;; fparsec: manyMinMaxSatisfy
-#_(defn *match
+#_(defn match*
     "Parses a sequence of zero or more characters satisfying `pred`,
    and returns them as a string."
     [pred])

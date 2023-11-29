@@ -4,4 +4,5 @@
 .portal/
 node_modules/
 target/
+.eastwood
 .nrepl-port

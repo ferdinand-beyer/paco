@@ -22,15 +22,14 @@
   {:status   :error
    :position (state/position state)
    :user     (state/user-state state)
-   :messages msgs})
+   :messages (error/sort-messages msgs)})
 
 (defn- parser-exception [{:keys [position messages] :as result}]
-  (ex-info (str "Parse Error: " (error/render-messages messages)
-                " at " position)
+  (ex-info (error/string messages position)
            (assoc result :type ::parse-error)))
 
 (defn- fail-exception [state msgs]
-  (throw (parser-exception (fail-result state msgs))))
+  (fn [] (throw (parser-exception (fail-result state msgs)))))
 
 (defn- run-parser [p input ok fail]
   ;; TODO: initial state from input + opts
@@ -47,6 +46,7 @@
 
 ;; fparsec: preturn
 ;; fparsec also has >>%: parse p, but return x
+;; ? Add arity (return p x)?
 (defn return [x]
   (fn [state ok _ _ _]
     (ok state x nil)))
@@ -62,16 +62,12 @@
   `(fn ~'cont [] (~p ~state ~ok ~ok! ~fail ~fail!)))
 
 (defn- ok-with-msgs [ok msgs]
-  (if (seq msgs)
-    (fn [state value msgs']
-      (ok state value (error/merge-messages msgs msgs')))
-    ok))
+  (fn [state value msgs']
+    (ok state value (error/union msgs msgs'))))
 
 (defn- fail-with-msgs [fail msgs]
-  (if (seq msgs)
-    (fn [state msgs']
-      (fail state (error/merge-messages msgs msgs')))
-    fail))
+  (fn [state msgs']
+    (fail state (error/union msgs msgs'))))
 
 (defn bind [p f]
   (fn [state ok ok! fail fail!]
@@ -131,7 +127,7 @@
               (continue p state
                         (fn ok' [state' value' msgs']
                           (run-next (f result value')
-                                    (error/merge-messages msgs msgs')
+                                    (error/union msgs msgs')
                                     state'
                                     ok ok!
                                     fail fail!))
@@ -162,7 +158,7 @@
         msgs        (make-sym "msgs")
         values      (conj prev-values value)
         merged-msgs (cond->> msgs
-                      prev-msgs (list `error/merge-messages prev-msgs))
+                      prev-msgs (list `error/union prev-msgs))
         next-ps     (next ps)]
     (list `continue (first ps) prev-state
           (list `fn (make-sym "ok") [state value msgs]
@@ -288,14 +284,14 @@
 
 (defn- alt2
   ([p1 p2]
-   (alt2 p1 p2 error/merge-messages))
-  ([p1 p2 merge-msgs]
+   (alt2 p1 p2 error/union))
+  ([p1 p2 msg-union]
    (fn [state ok ok! fail fail!]
      (letfn [(fail1 [state1 msgs1]
                (letfn [(ok2 [state2 value2 msgs2]
-                         (ok state2 value2 (merge-msgs msgs1 msgs2)))
+                         (ok state2 value2 (msg-union msgs1 msgs2)))
                        (fail2 [state2 msgs2]
-                         (fail state2 (merge-msgs msgs1 msgs2)))]
+                         (fail state2 (msg-union msgs1 msgs2)))]
                  (continue p2 state1 ok2 ok! fail2 fail!)))]
        (continue p1 state ok ok! fail1 fail!)))))
 
@@ -319,8 +315,8 @@
      pnil))
   ([ps label]
    (if-let [p (first ps)]
-     (core/let [errors-fn (constantly (error/expected label))]
-       (reduce #(alt2 %1 %2 errors-fn) p (next ps)))
+     (core/let [msg-fn (constantly (error/expected label))]
+       (reduce #(alt2 %1 %2 msg-fn) p (next ps)))
      pnil)))
 
 ;;---------------------------------------------------------
@@ -406,7 +402,7 @@
                 (fn [state value msgs]
                   (core/let [result (f result value)
                              fail' (fn [state' msgs']
-                                     (ok! state' (f result) (error/merge-messages msgs msgs')))]
+                                     (ok! state' (f result) (error/union msgs msgs')))]
                     (continue p state ok-throw (make-ok! result) fail' fail!))))]
         (continue p state ok-throw (make-ok! (f)) fail0 fail!)))))
 
@@ -443,12 +439,12 @@
   {:arglists '([p n] [p min max])}
   ([p n]
    (series (core/repeat n p)))
-  ([p min max-n]
-   {:pre [(<= min max-n)]}
-   (core/let [d (- max-n min)]
+  ([p min-n max-n]
+   {:pre [(<= min-n max-n)]}
+   (core/let [d (- max-n min-n)]
      (if (zero? d)
-       (repeat p min)
-       (cat (repeat p min) (max p d))))))
+       (repeat p min-n)
+       (cat (repeat p min-n) (max p d))))))
 
 (defn min [p n]
   (cat (repeat p n) (* p)))
@@ -474,19 +470,6 @@
   [ref]
   (fn [state ok ok! fail fail!]
     (continue @ref state ok ok! fail fail!)))
-
-(defn mut
-  "Returns a mutable parser that forwards all calls to an encapsulated
-   parser `p`.  Call the returned parser function with one arg to reset
-   `p`.  Useful to construct recursive parsers."
-  ([]
-   (mut pnil))
-  ([p]
-   (core/let [ref (atom p)]
-     (fn
-       ([p'] (reset! ref p'))
-       ([state ok ok! fail fail!]
-        (continue @ref state ok ok! fail fail!))))))
 
 (defn rec
   "Creates a recursive parser.  Calls `f` with one arg, a parser to recur,

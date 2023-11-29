@@ -122,6 +122,7 @@
 
   (p/parse json "  ")
   (p/parse json "[1 2]")
+  (p/parse (p/alt (p/attempt number) string) "1.")
   (p/parse json "19")
   (p/parse json "[1, 2, false, null]")
   (p/parse json "{\"foo\": 19, \"bar\" : false, \"x\": [\"y\"]}")
