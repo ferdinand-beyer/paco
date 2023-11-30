@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [array])
   (:require [paco.core :as p]
             [paco.chars :as c]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  #?(:clj (:import [clojure.lang MapEntry])))
 
 ;; TODO: skip-match
 ;; TODO: <??>, label fail! (aka, as)
@@ -76,8 +77,7 @@
            _ whitespace
            _ (c/skip-char \:)
            v value]
-    (p/return #?(:clj  (clojure.lang.MapEntry. k v)
-                 :cljs (MapEntry. k v)))))
+    (p/return (MapEntry. k v))))
 
 (def object
   (p/with [_ (c/skip-char \{)
@@ -101,6 +101,7 @@
 
 (def json (p/then-skip value p/end))
 
+#_{:clj-kondo/ignore [:unresolved-symbol]}
 (comment
   (p/parse number "172")
   (p/parse number "172.23e-2")
@@ -131,6 +132,27 @@
   (p/parse json "19")
   (p/parse json "[1, 2, false, null]")
   (p/parse json "{\"foo\": 19, \"bar\" : false, \"x\": [\"y\"]}")
+
+  (require '[clojure.data.json :as json])
+
+  (def input (slurp "dev/examples/json/example4.json"))
+
+  (def us (p/parse json input))
+  (def them (json/read-str input))
+
+  (= us them)
+
+  (require '[criterium.core :as criterium])
+
+  ;; them
+  (criterium/quick-bench
+   (json/read-str input))
+  ;; Execution time mean : 27,387667 µs
+
+  ;; us
+  (criterium/quick-bench
+   (p/parse json input))
+  ;; Execution time mean : 595,354831 µs
 
   ;;
   )

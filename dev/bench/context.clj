@@ -88,18 +88,6 @@
 ;;---------------------------------------------------------
 ;; Passing continuation functions
 
-(defn- ok-with-msgs [ok msgs]
-  (if (seq msgs)
-    (fn [state value msgs']
-      (ok state value (concat msgs msgs')))
-    ok))
-
-(defn- fail-with-msgs [fail msgs]
-  (if (seq msgs)
-    (fn [state msgs']
-      (fail state (concat msgs msgs')))
-    fail))
-
 (defn return2 [x]
   (fn [state ok _ _ _]
     (ok state x nil)))
@@ -107,13 +95,23 @@
 (defn bind2 [p f]
   (fn [state ok ok! fail fail!]
     (letfn [(ok' [state' value msgs]
-              (fn [] ((f value) state'
-                                (ok-with-msgs ok msgs) ok!
-                                (fail-with-msgs fail msgs) fail!)))
+              (let [p2 (f value)
+                    [ok fail] (if msgs
+                                [(fn [s v m]
+                                   (ok s v (concat msgs m)))
+                                 (fn [s m]
+                                   (fail s (concat msgs m)))]
+                                [ok fail])]
+                (fn [] (p2 state' ok ok! fail fail!))))
             (ok!' [state' value msgs]
-              (fn [] ((f value) state'
-                                (ok-with-msgs ok! msgs) ok!
-                                (fail-with-msgs fail! msgs) fail!)))]
+              (let [p2 (f value)
+                    [ok fail] (if msgs
+                                [(fn [s v m]
+                                   (ok! s v (concat msgs m)))
+                                 (fn [s m]
+                                   (fail! s (concat msgs m)))]
+                                [ok! fail!])]
+                (fn [] (p2 state' ok ok! fail fail!))))]
       (fn [] (p state ok' ok!' fail fail!)))))
 
 (defn run2 [p]
