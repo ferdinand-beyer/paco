@@ -66,20 +66,16 @@
 (defn bind [p f]
   (fn [state ctx]
     (reply/continue p state ctx
-      :ok (fn ok [s1 v1 m1]
+      :ok (fn [s1 v1 m1]
             (let [p2 (f v1)]
               (reply/continue p2 s1 ctx
-                :ok   (fn ok [s2 v2 m2]
-                        (reply/ok ctx s2 v2 (error/union m1 m2)))
-                :fail (fn fail [s2 m2]
-                        (reply/fail ctx s2 (error/union m1 m2))))))
-      :ok! (fn ok! [s1 v1 m1]
+                :ok   (reply/fwd-ok ctx m1)
+                :fail (reply/fwd-fail ctx m1))))
+      :ok! (fn [s1 v1 m1]
              (let [p2 (f v1)]
                (reply/continue p2 s1 ctx
-                 :ok   (fn ok [s2 v2 m2]
-                         (reply/ok! ctx s2 v2 (error/union m1 m2)))
-                 :fail (fn fail [s2 m2]
-                         (reply/fail! ctx s2 (error/union m1 m2)))))))))
+                 :ok   (reply/fwd-ok! ctx m1)
+                 :fail (reply/fwd-fail! ctx m1)))))))
 
 (defn- emit-let [bindings body]
   (core/let [[binding p] (take 2 bindings)]
@@ -125,18 +121,10 @@
   (letfn [(run-fn [p run-next]
             (fn [result msg state ctx]
               (reply/continue p state ctx
-                :ok  (fn ok [s1 v1 m1]
-                       (run-next (f result v1)
-                                 (error/union msg m1)
-                                 s1
-                                 ctx))
-                :ok! (fn ok! [s1 v1 m1]
-                       (run-next (f result v1)
-                                 m1
-                                 s1
-                                 (reply/with ctx
-                                   :ok   :ok!
-                                   :fail :fail!)))
+                :ok   (fn [s1 v1 m1]
+                        (run-next (f result v1) (error/union msg m1) s1 ctx))
+                :ok!  (fn [s1 v1 m1]
+                        (run-next (f result v1) m1 s1 (reply/with ctx, :ok :ok!, :fail :fail!)))
                 :fail (fn fail [s1 m1]
                         (reply/fail ctx s1 (error/union msg m1))))))
           (complete [result msg state ctx]
@@ -160,23 +148,21 @@
         merged-msg  (cond->> msg
                       prev-msg (list `error/union prev-msg))
         next-ps     (next ps)]
-    (list `reply/continue (first ps) prev-state ctx
-          :ok (list `fn (make-sym "ok") [state value msg]
-                    (if next-ps
-                      (emit-pipe-body f next-ps state
-                                      values merged-msg
-                                      ctx)
-                      (list `reply/ok ctx state (cons f values) merged-msg)))
-          :ok! (list `fn (make-sym "ok!") [state value msg]
+    (list* `reply/continue (first ps) prev-state ctx
+           :ok (list `fn (make-sym "ok") [state value msg]
                      (if next-ps
                        (emit-pipe-body f next-ps state
-                                       values msg
-                                       `(reply/with ~ctx :ok :ok! :fail :fail!))
-                       (list `reply/ok! ctx state (cons f values) msg)))
-          :fail (if prev-msg
-                  (list `fn (make-sym "fail!") [state msg]
-                        (list `reply/fail ctx state merged-msg))
-                  :fail))))
+                                       values merged-msg
+                                       ctx)
+                       (list `reply/ok ctx state (cons f values) merged-msg)))
+           :ok! (list `fn (make-sym "ok!") [state value msg]
+                      (if next-ps
+                        (emit-pipe-body f next-ps state
+                                        values msg
+                                        `(reply/with ~ctx, :ok :ok!, :fail :fail!))
+                        (list `reply/ok! ctx state (cons f values) msg)))
+           (when prev-msg
+             (list :fail (list `reply/fwd-fail ctx prev-msg))))))
 
 (defn- emit-pipe-parser [ps f]
   (list `fn (symbol (str "pipe" (count ps))) '[state ctx]
@@ -186,8 +172,10 @@
   (emit-pipe-parser (butlast ps+f) (last ps+f)))
 
 (comment
+  (emit-pipe-parser '[p1] 'f)
+  (emit-pipe-parser '[p1 p2] 'f)
   (emit-pipe-parser '[p1 p2 p3] 'f)
-  ;
+  ;;
   )
 
 ;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5

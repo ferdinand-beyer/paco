@@ -11,36 +11,39 @@
    (Context. ok ok! fail fail!)))
 
 (defn ok
+  "Succeed without changing `state`."
   ([^Context ctx state value]
    ((.-ok ctx) state value nil))
   ([^Context ctx state value msg]
    ((.-ok ctx) state value msg)))
 
 (defn ok!
+  "Succeed with changing `state`."
   ([^Context ctx state value]
    ((.-ok! ctx) state value nil))
   ([^Context ctx state value msg]
    ((.-ok! ctx) state value msg)))
 
 (defn fail
+  "Fail without changing `state`."
   [^Context ctx state msg]
   ((.-fail ctx) state msg))
 
 (defn fail!
+  "Fail with changing `state`."
   [^Context ctx state msg]
   ((.-fail! ctx) state msg))
 
-(defn- ctx-field [key]
-  (case key
-    :ok    '.-ok
-    :ok!   '.-ok!
-    :fail  '.-fail
-    :fail! '.-fail!))
-
 (defn- emit-ctx-get [ctx k]
-  (list (ctx-field k) ctx))
+  (-> #?(:bb k
+         :default (case k
+                    :ok    '.-ok
+                    :ok!   '.-ok!
+                    :fail  '.-fail
+                    :fail! '.-fail!))
+      (list ctx)))
 
-(defn- emit-ctx-arg [ctx binding-map k]
+(defn- emit-with-arg [ctx binding-map k]
   (let [expr (get binding-map k k)]
     (if (keyword? expr)
       (emit-ctx-get ctx expr)
@@ -49,16 +52,17 @@
 (defn- emit-with [ctx bindings]
   (if (seq bindings)
     (let [binding-map (apply hash-map bindings)
-          ctx'        (with-meta (gensym "ctx_") {:tag `Context})]
-      `(let [~ctx' ~ctx]
-         (Context.
-          ~(emit-ctx-arg ctx' binding-map :ok)
-          ~(emit-ctx-arg ctx' binding-map :ok!)
-          ~(emit-ctx-arg ctx' binding-map :fail)
-          ~(emit-ctx-arg ctx' binding-map :fail!))))
+          hinted-ctx  (with-meta (gensym "ctx_") {:tag `Context})]
+      `(let [~hinted-ctx ~ctx]
+         (#?(:bb ->Context, :default Context.)
+          ~(emit-with-arg hinted-ctx binding-map :ok)
+          ~(emit-with-arg hinted-ctx binding-map :ok!)
+          ~(emit-with-arg hinted-ctx binding-map :fail)
+          ~(emit-with-arg hinted-ctx binding-map :fail!))))
     ctx))
 
 (defmacro with
+  "Returns `ctx` with updated continuation functions."
   {:style/indent 1}
   [ctx & bindings]
   (emit-with ctx bindings))
@@ -68,11 +72,11 @@
      (fn ~'cont [] (~p ~state ctx#))))
 
 (defn- emit-continue [p state ctx bindings]
-  (emit-continue-thunk p state (if (seq bindings)
-                                 (emit-with ctx bindings)
-                                 ctx)))
+  (emit-continue-thunk p state (emit-with ctx bindings)))
 
 (defmacro continue
+  "Delegate to parser `p`, returning a thunk that will call
+   `(p state ctx)`.  Accepts args to update `ctx` using `with`."
   {:style/indent 3}
   [p state ctx & bindings]
   (emit-continue p state ctx bindings))
@@ -85,18 +89,18 @@
   ;
   )
 
-(defn fwd-ok [ctx msg]
+(defn fwd-ok [^Context ctx msg]
   (fn [state value msg2]
-    (ok ctx state value (error/union msg msg2))))
+    ((.-ok ctx) state value (error/union msg msg2))))
 
-(defn fwd-ok! [ctx msg]
+(defn fwd-ok! [^Context ctx msg]
   (fn [state value msg2]
-    (ok! ctx state value (error/union msg msg2))))
+    ((.-ok! ctx) state value (error/union msg msg2))))
 
-(defn fwd-fail [ctx msg]
+(defn fwd-fail [^Context ctx msg]
   (fn [state msg2]
-    (fail ctx state (error/union msg msg2))))
+    ((.-fail ctx) state (error/union msg msg2))))
 
-(defn fwd-fail! [ctx msg]
+(defn fwd-fail! [^Context ctx msg]
   (fn [state msg2]
-    (fail! ctx state (error/union msg msg2))))
+    ((.-fail! ctx) state (error/union msg msg2))))
