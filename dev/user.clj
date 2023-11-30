@@ -67,7 +67,7 @@
            "barbuzz")
 
   (p/parse (-> (c/string "42")
-               (p/expected "The answer to life, the universe, and everything."))
+               (p/expected "the answer to life, the universe, and everything"))
            "x")
 
   (p/parse (p/? (c/string "foo"))

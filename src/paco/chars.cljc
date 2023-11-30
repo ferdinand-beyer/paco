@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [char])
   (:require [paco.core :as p]
             [paco.error :as error]
+            [paco.reply :as reply]
             [paco.state :as state])
   #?(:cljs (:require-macros [paco.chars :refer [test-ranges]])))
 
@@ -66,22 +67,22 @@
                      (let [msg (error/expected label)]
                        #(error/union msg %))
                      identity)]
-     (fn [state _ ok! fail _]
+     (fn [state ctx]
        (if-let [ch (state/peek state)]
          (if (pred ch)
-           (ok! (state/skip-char state) ch nil)
-           (fail state (wrap-msgs (error/unexpected-input ch))))
-         (fail state (wrap-msgs error/unexpected-eof)))))))
+           (reply/ok! ctx (state/skip-char state) ch nil)
+           (reply/fail ctx state (wrap-msgs (error/unexpected-input ch))))
+         (reply/fail ctx state (wrap-msgs error/unexpected-eof)))))))
 
 (defn char-return [ch value]
   ;; TODO: optimise for non-newline
   (let [msgs (error/expected-input ch)]
-    (fn [state _ ok! fail _]
-      (if-let [ch' (state/peek state)]
-        (if (= ch ch')
-          (ok! (state/skip-char state) value nil)
-          (fail state (error/union (error/unexpected-input ch') msgs)))
-        (fail state (error/union error/unexpected-eof msgs))))))
+    (fn [state ctx]
+      (if-let [next-ch (state/peek state)]
+        (if (= ch next-ch)
+          (reply/ok! ctx (state/skip-char state) value)
+          (reply/fail ctx state (error/union (error/unexpected-input next-ch) msgs)))
+        (reply/fail ctx state (error/union error/unexpected-eof msgs))))))
 
 ;; fparsec: pchar
 (defn char [ch]
@@ -152,29 +153,28 @@
   (let [length   (count s)
         msgs     (error/expected-input s)
         eof-msgs (error/union error/unexpected-eof msgs)]
-    (fn [state _ ok! fail _]
+    (fn [state ctx]
       (if (state/matches-str? state s)
-        (ok! (state/skip state length) s nil)
-        (if (state/at-end? state)
-          (fail state eof-msgs)
-          (fail state msgs))))))
+        (reply/ok! ctx (state/skip state length) s)
+        (reply/fail ctx state (if (state/at-end? state)
+                                eof-msgs
+                                msgs))))))
 
 (defn string-return [ch x]
-  (p/>> (string ch) (p/return x)))
+  (p/return (string ch) x))
 
 (defn string-ic [s]
   (check-string-literal s)
   (let [length   (count s)
         msgs     (error/expected-input s) ;; TODO: expected-str-ic?
         eof-msgs (error/union error/unexpected-eof msgs)]
-    (fn [state _ ok! fail _]
+    (fn [state ctx]
       (if (state/matches-str-ic? state s)
-        (ok! (state/skip state length)
-             (state/peek-str state length)
-             nil)
-        (if (state/at-end? state)
-          (fail state eof-msgs)
-          (fail state msgs))))))
+        (reply/ok! ctx (state/skip state length)
+                   (state/peek-str state length))
+        (reply/fail ctx state (if (state/at-end? state)
+                                eof-msgs
+                                msgs))))))
 
 ;; fparsec: restOfLine, skipRestOfLine
 ;; fparsec: charsTillString

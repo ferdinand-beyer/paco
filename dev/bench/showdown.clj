@@ -167,27 +167,33 @@
 
 ;; ## Parse word, case-insensitive ##
 
+(bench-paco (c/string-ic "abc") "ABC")
+;             Execution time mean : 48,778929 ns
+;    Execution time std-deviation : 4,791800 ns
+;   Execution time lower quantile : 45,219154 ns ( 2,5%)
+;   Execution time upper quantile : 55,343194 ns (97,5%)
+
 (bench-parsesso (q/word "abc" :ic) "ABC")
-;             Execution time mean : 631,199580 ns
-;    Execution time std-deviation : 9,939793 ns
-;   Execution time lower quantile : 618,951019 ns ( 2,5%)
-;   Execution time upper quantile : 641,954344 ns (97,5%)
+;             Execution time mean : 150,456878 ns
+;    Execution time std-deviation : 12,496316 ns
+;   Execution time lower quantile : 143,056370 ns ( 2,5%)
+;   Execution time upper quantile : 171,845305 ns (97,5%)
 
 (bench-kern (k/token- "abc") "ABC")
-;             Execution time mean : 5,063223 µs
-;    Execution time std-deviation : 212,754488 ns
-;   Execution time lower quantile : 4,915983 µs ( 2,5%)
-;   Execution time upper quantile : 5,412170 µs (97,5%)
+;             Execution time mean : 1,779934 µs
+;    Execution time std-deviation : 116,763280 ns
+;   Execution time lower quantile : 1,695811 µs ( 2,5%)
+;   Execution time upper quantile : 1,938093 µs (97,5%)
 
 ;;,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 
 ;; ## Parse long word ##
 
 (bench-paco (c/string -input-10000) -input-10000)
-;             Execution time mean : 70,196175 ns
-;    Execution time std-deviation : 5,924179 ns
-;   Execution time lower quantile : 66,494457 ns ( 2,5%)
-;   Execution time upper quantile : 80,273477 ns (97,5%)
+;             Execution time mean : 10,867368 µs
+;    Execution time std-deviation : 87,342212 ns
+;   Execution time lower quantile : 10,773234 µs ( 2,5%)
+;   Execution time upper quantile : 10,999538 µs (97,5%)
 
 (bench-parsesso (q/word -input-10000) -input-10000)
 ;             Execution time mean : 462,584681 µs
