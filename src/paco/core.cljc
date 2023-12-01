@@ -4,7 +4,7 @@
             [paco.error :as error]
             [paco.reply :as reply]
             [paco.state :as state])
-  #?(:require-macros [paco.core :refer [continue lazy with]]))
+  #?(:cljs (:require-macros [paco.core :refer [pipe-parser]])))
 
 #?(:clj (set! *warn-on-reflection* true))
 

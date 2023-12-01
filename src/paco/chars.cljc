@@ -117,10 +117,10 @@
 
 ;; fparsec: + skipAnyChar
 (def any-char
-  (fn [state _ ok! fail _]
+  (fn [state ctx]
     (if-let [ch (state/peek state)]
-      (ok! (state/skip-char state) ch nil)
-      (fail state error/unexpected-eof))))
+      (reply/ok! ctx (state/skip-char state) ch nil)
+      (reply/fail ctx state error/unexpected-eof))))
 
 ;; fparsec: anyOf, noneOf
 ;; fparsec: + skip variants

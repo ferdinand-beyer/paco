@@ -1,7 +1,6 @@
 (ns paco.reply
-  #?(:cljs (:require-macros [paco.reply]))
-  (:require [paco.error :as error]
-            [paco.state :as state]))
+  (:require [paco.error :as error])
+  #?(:cljs (:require-macros [paco.reply])))
 
 (deftype Context [ok ok! fail fail!])
 

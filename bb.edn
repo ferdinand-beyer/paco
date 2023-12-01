@@ -3,7 +3,7 @@
          -test:all {:depends [test:clj test:cljs test:bb]}
 
          test:clj (do
-                    (println "Running tests in Clojure...")
+                    (println "Running Clojure tests...")
                     (clojure "-M:test:kaocha" "unit"))
 
          -prepare-kaocha-cljs {:requires ([babashka.fs :as fs])
@@ -13,12 +13,12 @@
 
          test:cljs {:depends [-prepare-kaocha-cljs]
                     :task (do
-                            (println "Running tests in ClojureScript...")
+                            (println "Running ClojureScript tests...")
                             (clojure "-M:test:kaocha" "unit-cljs"))}
 
          test:bb {:extra-paths ["test"]
                   :extra-deps {lambdaisland/kaocha {:mvn/version "1.87.1366"}}
                   :requires ([kaocha.runner])
                   :task (do
-                          (println "Running tests in Babashka...")
+                          (println "Running Babashka tests...")
                           (kaocha.runner/-main "unit"))}}}
