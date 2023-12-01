@@ -1,5 +1,6 @@
 (ns paco.state-test
   (:require [clojure.test :refer [deftest is testing]]
+            [paco.pos :as pos]
             [paco.state :as state]))
 
 (deftest string-stream-navigation
@@ -83,27 +84,27 @@
   (testing "behaves like `(skip state 1)` when not at a newline"
     (let [s (state/skip-char (state/of-string "example"))]
       (is (= 1 (state/index s)))
-      (is (= 0 (state/line-index s)))
-      (is (= 1 (state/column-index s)))))
+      (is (= 0 (pos/line-index s)))
+      (is (= 1 (pos/column-index s)))))
 
   (testing "tracks Unix-style newlines"
     (let [s (state/skip-char (state/of-string "\n"))]
       (is (= 1 (state/index s)))
-      (is (= 1 (state/line-index s)))
-      (is (= 0 (state/column-index s)))))
+      (is (= 1 (pos/line-index s)))
+      (is (= 0 (pos/column-index s)))))
 
   (testing "tracks Mac-style newlines"
     (let [s (state/skip-char (state/of-string "\r"))]
       (is (= 1 (state/index s)))
-      (is (= 1 (state/line-index s)))
-      (is (= 0 (state/column-index s)))))
+      (is (= 1 (pos/line-index s)))
+      (is (= 0 (pos/column-index s)))))
 
   (testing "tracks Windows-style newlines"
     (let [s (state/skip-char (state/of-string "\r\n"))]
       (is (= 1 (state/index s)))
-      (is (= 0 (state/line-index s)))
-      (is (= 1 (state/column-index s)))
+      (is (= 0 (pos/line-index s)))
+      (is (= 1 (pos/column-index s)))
       (let [s (state/skip-char s)]
         (is (= 2 (state/index s)))
-        (is (= 1 (state/line-index s)))
-        (is (= 0 (state/column-index s)))))))
+        (is (= 1 (pos/line-index s)))
+        (is (= 0 (pos/column-index s)))))))

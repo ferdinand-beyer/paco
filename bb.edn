@@ -1,14 +1,24 @@
 {:deps {com.fbeyer/paco {:local/root "."}}
  :tasks {test (run '-test:all #_{:parallel true})
          -test:all {:depends [test:clj test:cljs test:bb]}
-         test:clj (clojure "-M:test:kaocha" "unit")
+
+         test:clj (do
+                    (println "Running tests in Clojure...")
+                    (clojure "-M:test:kaocha" "unit"))
+
          -prepare-kaocha-cljs {:requires ([babashka.fs :as fs])
                                :task (when-not (fs/directory? "node_modules/ws")
                                        (println "Installing `ws` package...")
                                        (shell "npm install --no-save ws"))}
+
          test:cljs {:depends [-prepare-kaocha-cljs]
-                    :task (clojure "-M:test:kaocha" "unit-cljs")}
+                    :task (do
+                            (println "Running tests in ClojureScript...")
+                            (clojure "-M:test:kaocha" "unit-cljs"))}
+
          test:bb {:extra-paths ["test"]
                   :extra-deps {lambdaisland/kaocha {:mvn/version "1.87.1366"}}
                   :requires ([kaocha.runner])
-                  :task (kaocha.runner/-main "unit")}}}
+                  :task (do
+                          (println "Running tests in Babashka...")
+                          (kaocha.runner/-main "unit"))}}}

@@ -1,6 +1,7 @@
 (ns paco.state
   (:refer-clojure :exclude [peek])
-  #?(:cljs (:require [goog.string :as gstr])))
+  (:require #?(:cljs [goog.string :as gstr])
+            [paco.pos :as pos]))
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -80,23 +81,6 @@
     (StringStream. input 0)))
 
 ;;---------------------------------------------------------
-;; Position
-
-(defprotocol IPosition
-  (line-index [pos])
-  (column-index [pos]))
-
-(defrecord Position [^#?(:clj int :cljs number) line
-                     ^#?(:clj int :cljs number) column]
-  Object
-  (toString [_] (str "line " (unchecked-inc line)
-                     ", column " (unchecked-inc column)))
-
-  IPosition
-  (line-index [_] line)
-  (column-index [_] column))
-
-;;---------------------------------------------------------
 ;; State
 
 ;; ? Maybe support stream transform functions
@@ -116,7 +100,7 @@
   (matches-str? [_ s] (matches-str? stream s))
   (matches-str-ic? [_ s] (matches-str-ic? stream s))
 
-  IPosition
+  pos/IPosition
   (line-index [_] line)
   (column-index [_] (unchecked-subtract (index stream) line-begin)))
 
@@ -127,16 +111,26 @@
    (State. (string-stream s) 0 0 user-state))
   ([s user-state pos]
    (State. (string-stream s)
-           (line-index pos)
-           (- (column-index pos))
+           (pos/line-index pos)
+           (- (pos/column-index pos))
            user-state)))
 
-(defn position [state]
-  (Position. (line-index state)
-             (column-index state)))
+;; TODO: Support different input types and options (e.g. starting pos)?
+(defn of [input _opts]
+  (of-string input))
+
+(defn pos [state]
+  (pos/->Position (pos/line-index state)
+                  (pos/column-index state)))
 
 (defn user-state [^State state]
   (.-user-state state))
+
+(defn with-user-state [^State state user-state]
+  (State. (.-stream state)
+          (.-line state)
+          (.-line-begin state)
+          user-state))
 
 (defn- same-line [^State state stream]
   (State. stream

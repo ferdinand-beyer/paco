@@ -333,7 +333,7 @@
 
 ;; ## Wrap with `expecting` ##
 
-(bench-paco (-> (p/return :x) (p/expected "x")) "")
+(bench-paco (-> (p/return :x) (p/as "x")) "")
 ;             Execution time mean : 78,954855 ns
 ;    Execution time std-deviation : 7,143476 ns
 ;   Execution time lower quantile : 74,021075 ns ( 2,5%)

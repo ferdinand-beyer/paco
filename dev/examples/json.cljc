@@ -7,7 +7,7 @@
 ;; TODO: skip-match
 ;; TODO: <??>, label fail! (aka, as)
 (def whitespace
-  (p/* (p/expected (c/any-of " \r\n\t") "whitespace")))
+  (p/* (p/as (c/any-of " \r\n\t") "whitespace")))
 
 ;; TODO: reduce to string (fparsec: manyChars, skipped)
 ;; TODO: (chars/range \0 \9)

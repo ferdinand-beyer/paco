@@ -1,6 +1,7 @@
 (ns paco.reply
   #?(:cljs (:require-macros [paco.reply]))
-  (:require [paco.error :as error]))
+  (:require [paco.error :as error]
+            [paco.state :as state]))
 
 (deftype Context [ok ok! fail fail!])
 
@@ -14,25 +15,25 @@
   "Succeed without changing `state`."
   ([^Context ctx state value]
    ((.-ok ctx) state value nil))
-  ([^Context ctx state value msg]
-   ((.-ok ctx) state value msg)))
+  ([^Context ctx state value error]
+   ((.-ok ctx) state value error)))
 
 (defn ok!
   "Succeed with changing `state`."
   ([^Context ctx state value]
    ((.-ok! ctx) state value nil))
-  ([^Context ctx state value msg]
-   ((.-ok! ctx) state value msg)))
+  ([^Context ctx state value error]
+   ((.-ok! ctx) state value error)))
 
 (defn fail
   "Fail without changing `state`."
-  [^Context ctx state msg]
-  ((.-fail ctx) state msg))
+  [^Context ctx state error]
+  ((.-fail ctx) state error))
 
 (defn fail!
   "Fail with changing `state`."
-  [^Context ctx state msg]
-  ((.-fail! ctx) state msg))
+  [^Context ctx state error]
+  ((.-fail! ctx) state error))
 
 (defn- emit-ctx-get [ctx k]
   (-> #?(:bb k
@@ -89,18 +90,32 @@
   ;
   )
 
-(defn fwd-ok [^Context ctx msg]
-  (fn [state value msg2]
-    ((.-ok ctx) state value (error/union msg msg2))))
+(defn fwd-ok [^Context ctx error]
+  (let [ok' (.-ok ctx)]
+    (fn [state value error']
+      (ok' state value (error/merge error error')))))
 
-(defn fwd-ok! [^Context ctx msg]
-  (fn [state value msg2]
-    ((.-ok! ctx) state value (error/union msg msg2))))
+(defn fwd-ok! [^Context ctx error]
+  (let [ok!' (.-ok! ctx)]
+    (fn [state value error']
+      (ok!' state value (error/merge error error')))))
 
-(defn fwd-fail [^Context ctx msg]
-  (fn [state msg2]
-    ((.-fail ctx) state (error/union msg msg2))))
+(defn fwd-fail [^Context ctx error]
+  (let [fail' (.-fail ctx)]
+    (fn [state error']
+      (fail' state (error/merge error error')))))
 
-(defn fwd-fail! [^Context ctx msg]
-  (fn [state msg2]
-    ((.-fail! ctx) state (error/union msg msg2))))
+(defn fwd-fail! [^Context ctx error]
+  (let [fail!' (.-fail! ctx)]
+    (fn [state error']
+      (fail!' state (error/merge error error')))))
+
+(defn ok-backtrack [^Context ctx state value]
+  (let [ok' (.-ok ctx)]
+    (fn [state' error]
+      (ok' state value (error/nested state' error)))))
+
+(defn fail-backtrack [^Context ctx state]
+  (let [fail' (.-fail ctx)]
+    (fn [state' error]
+      (fail' state (error/nested state' error)))))

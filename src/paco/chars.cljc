@@ -9,7 +9,9 @@
 ;;---------------------------------------------------------
 ;; Character predicates
 
-(defn- code-point [ch]
+(defn code-point
+  "Returns the Unicode code point of `ch` as an integer."
+  [ch]
   #?(:clj  (unchecked-int (.charValue ^Character ch))
      :cljs (.charCodeAt ^js ch 0)))
 
@@ -20,69 +22,91 @@
                `(and (<= ~(code-point min-ch) ~cp)
                      (<= ~cp ~(code-point max-ch))))))))
 
-(defn ascii-upper? [ch]
+(defn ascii-upper?
+  "Returns true if `ch` is a ASCII upper-case letter (A-Z)."
+  [ch]
   (test-ranges ch [\A \Z]))
 
-(defn ascii-lower? [ch]
+(defn ascii-lower?
+  "Returns true if `ch` is a ASCII lower-case letter (a-z)."
+  [ch]
   (test-ranges ch [\a \z]))
 
-(defn ascii-letter? [ch]
+(defn ascii-letter?
+  "Returns true if `ch` is a ASCII letter (a-z, A-Z)."
+  [ch]
   (test-ranges ch [\a \z] [\A \Z]))
 
-(defn upper? [ch]
+(defn upper?
+  "Returns true if `ch` is a Unicode upper-case letter."
+  [ch]
   #?(:clj  (Character/isUpperCase (.charValue ^Character ch))
      :cljs (.test #"(?u)^\p{Lu}$" ch)))
 
-(defn lower? [ch]
+(defn lower?
+  "Returns true if `ch` is a Unicode lower-case letter."
+  [ch]
   #?(:clj  (Character/isLowerCase (.charValue ^Character ch))
      :cljs (.test #"(?u)^\p{Ll}$" ch)))
 
-(defn letter? [ch]
+(defn letter?
+  "Returns true if `ch` is a Unicode letter."
+  [ch]
   #?(:clj  (Character/isLetter (.charValue ^Character ch))
      :cljs (.test #"(?u)^\p{L}$" ch)))
 
-(defn control? [ch]
+(defn control?
+  "Returns true if `ch` is a control character."
+  [ch]
   #?(:clj  (Character/isISOControl (.charValue ^Character ch))
      :cljs (.test #"(?u)^\p{Cc}$" ch)))
 
-;; decimal digit
-(defn digit? [ch]
+(defn digit?
+  "Returns true if `ch` is a decimal digit (0-9)."
+  [ch]
   (test-ranges ch [\0 \9]))
 
-(defn hex? [ch]
+(defn hex?
+  "Returns true if `ch` is a hexadecimal digit (0-9, a-f, A-F)."
+  [ch]
   (test-ranges ch [\0 \9] [\a \f] [\A \F]))
 
-(defn octal? [ch]
+(defn octal?
+  "Returns true if `ch` is an octal digit (0-7)."
+  [ch]
   (test-ranges ch [\0 \7]))
 
 ;;---------------------------------------------------------
 ;; Character parsers
+
+(defn- match-char [pred skip error]
+  (fn [state ctx]
+    (if-let [ch (state/peek state)]
+      (if (pred ch)
+        (reply/ok! ctx (skip state) ch nil)
+        (reply/fail ctx state (error (error/unexpected-input ch))))
+      (reply/fail ctx state (error error/unexpected-eof)))))
 
 ;; fparsec: satisfy; normalises newlines
 (defn match
   ([pred]
    (match pred nil))
   ([pred label]
-   (let [wrap-msgs (if label
-                     (let [msg (error/expected label)]
-                       #(error/union msg %))
-                     identity)]
-     (fn [state ctx]
-       (if-let [ch (state/peek state)]
-         (if (pred ch)
-           (reply/ok! ctx (state/skip-char state) ch nil)
-           (reply/fail ctx state (wrap-msgs (error/unexpected-input ch))))
-         (reply/fail ctx state (wrap-msgs error/unexpected-eof)))))))
+   (match-char pred state/skip-char
+               (if label
+                 (let [error (error/expected label)]
+                   #(error/merge error %))
+                 identity))))
 
 (defn char-return [ch value]
   ;; TODO: optimise for non-newline
-  (let [msgs (error/expected-input ch)]
+  (let [error (error/expected-input ch)]
     (fn [state ctx]
       (if-let [next-ch (state/peek state)]
         (if (= ch next-ch)
           (reply/ok! ctx (state/skip-char state) value)
-          (reply/fail ctx state (error/union (error/unexpected-input next-ch) msgs)))
-        (reply/fail ctx state (error/union error/unexpected-eof msgs))))))
+          (reply/fail ctx state (error/merge (error/unexpected-input next-ch) error)))
+        (reply/fail ctx state (error/merge error/unexpected-eof error))))))
 
 ;; fparsec: pchar
 (defn char [ch]
@@ -101,9 +125,9 @@
 ;; fparsec: anyOf, noneOf
 ;; fparsec: + skip variants
 (defn any-of [chars]
-  ;; TODO: Support a variant of match that takes a custom msgs fn
-  #_(map error/expected-input chars)
-  (match (set chars) (str "any of '" chars "'")))
+  ;; TODO: Optimise for newlines?
+  (let [error (map error/expected-input chars)]
+    (match-char (set chars) state/skip-char #(error/merge error %))))
 
 (def ascii-upper
   (match ascii-upper? "ASCII upper-case letter"))
@@ -151,30 +175,26 @@
 (defn string [s]
   (check-string-literal s)
   (let [length   (count s)
-        msgs     (error/expected-input s)
-        eof-msgs (error/union error/unexpected-eof msgs)]
+        error     (error/expected-input s)
+        error-eof (error/merge error/unexpected-eof error)]
     (fn [state ctx]
       (if (state/matches-str? state s)
         (reply/ok! ctx (state/skip state length) s)
-        (reply/fail ctx state (if (state/at-end? state)
-                                eof-msgs
-                                msgs))))))
+        (reply/fail ctx state (if (state/at-end? state) error-eof error))))))
 
 (defn string-return [ch x]
   (p/return (string ch) x))
 
 (defn string-ic [s]
   (check-string-literal s)
-  (let [length   (count s)
-        msgs     (error/expected-input s) ;; TODO: expected-str-ic?
-        eof-msgs (error/union error/unexpected-eof msgs)]
+  (let [length    (count s)
+        error     (error/expected-input s) ;; TODO: expected-str-ic?
+        error-eof (error/merge error/unexpected-eof error)]
     (fn [state ctx]
       (if (state/matches-str-ic? state s)
         (reply/ok! ctx (state/skip state length)
                    (state/peek-str state length))
-        (reply/fail ctx state (if (state/at-end? state)
-                                eof-msgs
-                                msgs))))))
+        (reply/fail ctx state (if (state/at-end? state) error-eof error))))))
 
 ;; fparsec: restOfLine, skipRestOfLine
 ;; fparsec: charsTillString

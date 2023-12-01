@@ -67,7 +67,7 @@
            "barbuzz")
 
   (p/parse (-> (c/string "42")
-               (p/expected "the answer to life, the universe, and everything"))
+               (p/as "the answer to life, the universe, and everything"))
            "x")
 
   (p/parse (p/? (c/string "foo"))
@@ -144,6 +144,15 @@
                  (c/string "foox"))]
     (criterium/quick-bench
      (p/parse p "foox")))
+
+  (p/parse (p/as! (p/cat (c/string "foo")
+                         (c/string "bar"))
+                  "foobar")
+           "foox")
+  (p/parse (p/as! (p/cat (c/string "foo")
+                         (p/attempt (c/string "bar")))
+                  "foobar")
+           "foox")
 
   (p/parse (-> (c/char \a)
                (p/skip*)
