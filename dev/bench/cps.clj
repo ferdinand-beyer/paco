@@ -1,10 +1,26 @@
 (ns bench.cps
-  (:refer-clojure :exclude [char])
+  (:refer-clojure :exclude [char repeat])
   (:require [criterium.core :as criterium]
             [paco.chars :as c]
             [paco.core :as p]
             [paco.error :as error]
             [paco.state :as state]))
+
+(comment
+  ;; boolean
+  (defn reply [ok? state result error])
+
+  ;; :ok/:error/:fatal
+  (defn reply [status state result error])
+
+  ;; false/true/special
+  (defn reply [fail? state result error])
+
+  ;; boolean + extra
+  (defn reply [ok? state result error ctx])
+
+  ;;
+  )
 
 (defn return [x]
   (fn [state reply]
@@ -21,20 +37,20 @@
 
 (defn bind [p f]
   (fn [state reply]
-    (fn []
-      (p state
-         (fn [status1 state1 value1 error1]
-           (if (= :ok status1)
-             (let [p2 (f value1)]
-               (if (nil? error1)
-                 (p2 state1 reply)
-                 (fn []
-                   (p2 state1
-                       (fn [status2 state2 value2 error2]
-                         (if (identical? state2 state1)
-                           (reply status2 state2 value2 (error/merge error1 error2))
-                           (reply status2 state2 value2 error2)))))))
-             (reply status1 state1 value1 error1)))))))
+    (letfn [(reply1 [status1 state1 value1 error1]
+              (if (= :ok status1)
+                (let [p2 (f value1)]
+                  (if (nil? error1)
+                    (p2 state1 reply)
+                    (letfn [(reply2 [status2 state2 value2 error2]
+                              (if (identical? state2 state1)
+                                (reply status2 state2 value2 (error/merge error1 error2))
+                                (reply status2 state2 value2 error2)))]
+                      (fn []
+                        (p2 state1 reply2)))))
+                (reply status1 state1 value1 error1)))]
+      (fn []
+        (p state reply1)))))
 
 (defn pipe
   ([p f]
@@ -60,6 +76,43 @@
                                 error2
                                 (error/merge error1 error2))))))
                (reply status1 state1 value1 error1))))))))
+
+(defn- state-unchanged-exception [sym p]
+  (ex-info (str "Parser supplied to '" sym "' succeeded without changing the parser state")
+           {:type ::state-unchanged
+            :parser sym
+            :arg p}))
+
+(defn- reduce-repeat [sym p rf min max]
+  {:pre [(nat-int? min) (or (nil? max) (<= min max))]}
+  (letfn [(step [reply acc n state1 error1]
+            (letfn [(step-reply [status state2 value error2]
+                      (if (= :ok status)
+                        (if (identical? state1 state2)
+                          (throw (state-unchanged-exception sym p))
+                          (let [acc (rf acc value)
+                                n   (inc n)]
+                            (if (or (nil? max) (< n max))
+                              (step reply acc n state2 error2)
+                              (reply :ok state2 (rf acc) error2))))
+                        (let [error (if (and error1 (identical? state1 state2))
+                                      (error/merge error1 error2)
+                                      error2)]
+                          (if (< n min)
+                            (reply :error state2 nil error)
+                            (reply :ok state2 (rf acc) error)))))]
+              (fn []
+                (p state1 step-reply))))]
+    (if (and max (pos? max))
+      (fn [state reply]
+        (step reply (rf) 0 state nil))
+      (return (rf (rf))))))
+
+(defn repeat
+  ([p n]
+   (reduce-repeat `repeat p @#'p/seqexp-rf n n))
+  ([p min max]
+   (reduce-repeat `repeat p @#'p/seqexp-rf min max)))
 
 (defn run [p input]
   (let [state (state/of-string input)
@@ -89,11 +142,19 @@
 
   ;; bind
 
-  (criterium/quick-bench
+  (criterium/bench
    (parse (bind (char \f) (fn [x] (return [:char x]))) "foobar"))
+  ;;           Execution time mean : 49,057655 ns
+  ;;  Execution time std-deviation : 0,494558 ns
+  ;; Execution time lower quantile : 48,605355 ns ( 2,5%)
+  ;; Execution time upper quantile : 50,150967 ns (97,5%)
 
-  (criterium/quick-bench
-   (p/parse (p/bind (c/char \f) #(p/return [:char %])) "foobar"))
+  (criterium/bench
+   (p/parse (p/bind (c/char \f) (fn [x] (p/return [:char x]))) "foobar"))
+  ;;           Execution time mean : 101,514484 ns
+  ;;  Execution time std-deviation : 1,189918 ns
+  ;; Execution time lower quantile : 100,536222 ns ( 2,5%)
+  ;; Execution time upper quantile : 104,472441 ns (97,5%)
 
   ;; pipe1
 
@@ -122,6 +183,33 @@
   ;;  Execution time std-deviation : 1,126201 ns
   ;; Execution time lower quantile : 132,433927 ns ( 2,5%)
   ;; Execution time upper quantile : 133,653385 ns (97,5%)
+
+  ;; repeat
+
+  (parse (repeat (char \x) 0 0) "")
+  (parse (repeat (char \x) 0 5) "xxd")
+
+  (run (repeat (char \x) 2 4) "")
+  (run (repeat (char \x) 2 4) "x")
+
+  (parse (repeat (char \x) 2 4) "xx")
+  (parse (repeat (char \x) 2 4) "xxxx")
+  (parse (repeat (char \x) 2 4) "xxxxyy")
+  (parse (repeat (char \x) 2 4) "xxxxxx")
+
+  (criterium/bench
+   (parse (repeat (char \x) 2 4) "xxxxxx"))
+  ;;           Execution time mean : 225,221690 ns
+  ;;  Execution time std-deviation : 1,931523 ns
+  ;; Execution time lower quantile : 222,721630 ns ( 2,5%)
+  ;; Execution time upper quantile : 228,298523 ns (97,5%)
+
+  (criterium/bench
+   (p/parse (p/repeat (c/char \x) 2 4) "xxxxxx"))
+  ;;           Execution time mean : 302,060060 ns
+  ;;  Execution time std-deviation : 2,682887 ns
+  ;; Execution time lower quantile : 299,603200 ns ( 2,5%)
+  ;; Execution time upper quantile : 303,852685 ns (97,5%)
 
   ;;
   )
