@@ -137,12 +137,14 @@
 (deftest attempt-test
   (is (= :foo-fighters (-> (p/alt (p/attempt (p/cat (c/string "foo")
                                                     (c/string "bar")))
-                                  (p/return (c/string-ic "foo fighters") :foo-fighters))
+                                  (p/return (c/string-i "foo fighters") :foo-fighters))
                            (p/parse "Foo Fighters are a band"))))
+
   (let [result (helper/run (p/attempt helper/any))]
     (is (:fail? result))
     (is (not (:changed? result)))
     (is (= error/unexpected-eof (:error result))))
+
   (let [result (helper/run (p/attempt (p/>> helper/any helper/any)) "x")]
     (is (:fail? result))
     (is (not (:changed? result)))

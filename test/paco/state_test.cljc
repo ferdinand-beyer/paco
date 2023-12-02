@@ -3,7 +3,7 @@
             [paco.pos :as pos]
             [paco.state :as state]))
 
-(deftest string-stream-navigation
+(deftest string-stream-navigation-test
   (let [s (state/string-stream "example")]
     (is (zero? (state/index s)))
     (is (not (state/at-end? s)))
@@ -50,7 +50,7 @@
         (is (nil? (state/peek s)))
         (is (nil? (state/peek-str s 4)))))))
 
-(deftest string-stream-matching
+(deftest string-stream-matching-test
   (let [s (state/string-stream "example")]
     (testing "stream at the start position"
       (is (state/matches-str? s ""))
@@ -59,7 +59,7 @@
       (is (state/matches-str? s "example"))
       (is (not (state/matches-str? s "examples")))
       (testing "ignoring case"
-        (is (state/matches-str-ic? s "EXAM"))
+        (is (state/matches-str-i? s "EXAM"))
         (is (not (state/matches-str? s "EXAMPLES")))))
 
     (testing "stream after skipping"
@@ -69,7 +69,7 @@
         (is (state/matches-str? s "ple"))
         (is (not (state/matches-str? s "ples")))
         (testing "ignoring case"
-          (is (state/matches-str-ic? s "PL"))
+          (is (state/matches-str-i? s "PL"))
           (is (not (state/matches-str? s "PLES"))))))
 
     (testing "stream after skipping to the end"
@@ -77,10 +77,10 @@
         (is (state/matches-str? s ""))
         (is (not (state/matches-str? s "e")))
         (testing "ignoring case"
-          (is (state/matches-str-ic? s ""))
+          (is (state/matches-str-i? s ""))
           (is (not (state/matches-str? s "E"))))))))
 
-(deftest skip-char
+(deftest skip-char-test
   (testing "behaves like `(skip state 1)` when not at a newline"
     (let [s (state/skip-char (state/of-string "example"))]
       (is (= 1 (state/index s)))

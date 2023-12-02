@@ -185,13 +185,13 @@
 (defn string-return [ch x]
   (p/return (string ch) x))
 
-(defn string-ic [s]
+(defn string-i [s]
   (check-string-literal s)
   (let [length    (count s)
         error     (error/expected-input s) ;; TODO: expected-str-ic?
         error-eof (error/merge error/unexpected-eof error)]
     (fn [state ctx]
-      (if (state/matches-str-ic? state s)
+      (if (state/matches-str-i? state s)
         (reply/ok! ctx (state/skip state length)
                    (state/peek-str state length))
         (reply/fail ctx state (if (state/at-end? state) error-eof error))))))

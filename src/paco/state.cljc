@@ -26,7 +26,7 @@
     "Peeks up to `n` characters and returns them as a string.")
   (matches-str? [stream s]
     "Returns true if the next characters match `s`.")
-  (matches-str-ic? [stream s]
+  (matches-str-i? [stream s]
     "Returns true if the next characters match `s`, ignoring case."))
 
 ;;---------------------------------------------------------
@@ -41,7 +41,7 @@
   ICharStream
   (peek-str [_ _] nil)
   (matches-str? [_ s] (empty? s))
-  (matches-str-ic? [_ s] (empty? s)))
+  (matches-str-i? [_ s] (empty? s)))
 
 ;;---------------------------------------------------------
 ;; StringStream
@@ -68,7 +68,7 @@
        :cljs (let [end (unchecked-add index (.-length s))]
                (when (<= end (.-length input))
                  (= (.substring input index end) s)))))
-  (matches-str-ic? [_ s]
+  (matches-str-i? [_ s]
     #?(:clj  (.regionMatches input true index s 0 (.length ^String s))
        :cljs (let [end (unchecked-add index (.-length s))]
                (when (<= end (.-length input))
@@ -98,7 +98,7 @@
   ICharStream
   (peek-str [_ n] (peek-str stream n))
   (matches-str? [_ s] (matches-str? stream s))
-  (matches-str-ic? [_ s] (matches-str-ic? stream s))
+  (matches-str-i? [_ s] (matches-str-i? stream s))
 
   pos/IPosition
   (line-index [_] line)
