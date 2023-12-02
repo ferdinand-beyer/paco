@@ -96,13 +96,6 @@
          (some? body)]}
   (emit-let bindings body))
 
-(defn- vec-rf
-  "Reducing function that collects input in a vector.
-   Like `conj!`, but completes with a persistent collection."
-  ([] (transient []))
-  ([coll] (persistent! coll))
-  ([coll x] (conj! coll x)))
-
 (def ^:private ignore
   "Ignores all args and returns `nil`.  Useful for skip parsers."
   (constantly nil))
@@ -119,26 +112,26 @@
 ;; alternate names: >>reduce, preduce, reduce-seq
 (defn- reduce-sequence
   "Creates a parser that runs `ps` in sequence, reducing their return
-   values with the reducing function `f`."
-  [f ps]
+   values with the reducing function `rf`."
+  [rf ps]
   (letfn [(run-fn [p run-next]
             (fn [acc error state ctx]
               (reply/continue p state ctx
                 :ok   (fn [s1 v1 e1]
-                        (run-next (f acc v1) (error/merge error e1) s1 ctx))
+                        (run-next (rf acc v1) (error/merge error e1) s1 ctx))
                 :ok!  (fn [s1 v1 e1]
-                        (run-next (f acc v1) e1 s1 (reply/with ctx, :ok :ok!, :fail :fail!)))
+                        (run-next (rf acc v1) e1 s1 (reply/with ctx, :ok :ok!, :fail :fail!)))
                 :fail (fn fail [s1 e1]
                         (reply/fail ctx s1 (error/merge error e1))))))
           (complete [acc error state ctx]
-            (reply/ok ctx state (f acc) error))
+            (reply/ok ctx state (rf acc) error))
           (compile [ps]
             (if-let [p (first ps)]
               (run-fn p (compile (next ps)))
               complete))]
     (let [run (compile ps)]
       (fn [state ctx]
-        (run (f) nil state ctx)))))
+        (run (rf) nil state ctx)))))
 
 (defn- emit-pipe-body
   [f ps prev-state ctx prev-values prev-error]
@@ -192,33 +185,42 @@
          f  (last more)]
      (reduce-sequence (completing conj #(apply f %)) ps))))
 
-;; alternative names: g, group', groups, pseq
+(defn- vec-rf
+  "Reducing function that collects input in a vector.
+   Like `conj!`, but completes with a persistent collection."
+  ([] (transient []))
+  ([coll] (persistent! coll))
+  ([coll x] (conj! coll x)))
+
+;; alternative names: g, group', groups, pseq, tuples
 (defn sequence
   "The parser `(series ps)` applies the parsers `ps` in sequence."
   [ps]
   (reduce-sequence vec-rf ps))
 
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
+;; alternative names: tuple
 (defn group
   ([p] p)
   ([p1 p2]
-   (pipe p1 p2 list))
+   (pipe p1 p2 vector))
   ([p1 p2 p3]
-   (pipe p1 p2 p3 list))
+   (pipe p1 p2 p3 vector))
   ([p1 p2 p3 p4 & more]
    (sequence (list* p1 p2 p3 p4 more))))
+
+(defn- then-rf
+  ([] nil)
+  ([result] result)
+  ([_ input] input))
 
 ;; fparsec: >>.
 ;; parsesso: after
 ;; Would be cool to call this `do`, but this fails for (do)
-;; since it is a special form
+;; since it is a special form (paco.core/do) ;=> nil
 ;; alternative names: then, pdo
 (defn >> [& ps]
-  (reduce-sequence (fn
-                     ([] nil)
-                     ([result] result)
-                     ([_ input] input))
-                   ps))
+  (reduce-sequence then-rf ps))
 
 ;; fparsec: .>> - return the first result
 ;; fparsetc: .>>.: like (cat p1 p2)
@@ -390,21 +392,21 @@
    When `p` fails on the first call (without changing the state),
    i.e. when `p` succeeded zero times, calls
    `(zero ctx state error)`."
-  [sym zero f p]
+  [sym zero rf p]
   (letfn [(ok-throw [_ _ _]
             (throw (state-unchanged-exception sym p)))
           (make-ok! [ctx acc]
             (fn [state value error]
-              (core/let [acc' (f acc value)]
+              (core/let [acc' (rf acc value)]
                 (reply/continue p state ctx
                   :ok   ok-throw
                   :ok!  (make-ok! ctx acc')
                   :fail (fn [s2 e2]
-                          (reply/ok! ctx s2 (f acc') (error/merge error e2)))))))]
+                          (reply/ok! ctx s2 (rf acc') (error/merge error e2)))))))]
     (fn [state ctx]
       (reply/continue p state ctx
         :ok   ok-throw
-        :ok!  (make-ok! ctx (f))
+        :ok!  (make-ok! ctx (rf))
         :fail (fn [s e] (zero ctx s e))))))
 
 (defn- zero-ok [ctx state error]
@@ -423,36 +425,96 @@
   [p]
   (reduce-many `+ zero-fail seqexp-rf p))
 
+;; fparsec: skipMany
 ;; or: *skip
 (defn skip* [p]
   (reduce-many `skip* zero-ok ignore p))
 
+;; fparsec: skipMany1
 ;; or: +skip
 (defn skip+ [p]
   (reduce-many `skip+ zero-fail ignore p))
 
-(defn max [p n]
-  (if (< n 1)
-    (return (with-meta () seqexp-meta))
-    (? (pipe p (max p (dec n)) (fn [x xs]
-                                 (with-meta (cons x xs) seqexp-meta))))))
+(defn- reduce-repeat
+  "Builds a parser that applies `p` at least `min` and at most `max`
+   times, and reduces the return values using `rf`."
+  [sym p rf min max]
+  {:pre [(nat-int? min) (or (nil? max) (<= min max))]}
+  (letfn [(ok-throw [_ _ _]
+            (throw (state-unchanged-exception sym p)))
+          ;; When `p` succeeds, complete the reduction.
+          (ok!-complete [ctx acc]
+            (fn [state value error]
+              (reply/ok! ctx state (rf (rf acc value)) error)))
+          ;; When `p` fails without changing the state, complete the reduction.
+          (fail-complete [ctx acc prev-error]
+            (fn [state error]
+              (reply/ok! ctx state (rf acc) (error/merge prev-error error))))
+          ;; After satisfying `min`, determine when we will reach `max`.
+          (ok!-check-max [ctx acc n+1]
+            (if (nil? max)
+              (ok!-no-max ctx acc)
+              (if (= n+1 max)
+                (ok!-complete ctx acc)
+                (ok!-up-to-max ctx acc n+1))))
+          ;; Continue parsing until we reach `min`.
+          (ok!-expect-min [ctx acc n]
+            (fn [state value error]
+              (let [acc (rf acc value)
+                    n+1 (inc n)]
+                (reply/continue p state ctx
+                  :ok   ok-throw
+                  :ok!  (if (= n+1 min)
+                          (ok!-check-max ctx acc n+1)
+                          (ok!-expect-min ctx acc n+1))
+                  :fail (reply/fwd-fail! ctx error)))))
+          ;; Continue until we reach `max` or `p` fails.
+          (ok!-up-to-max [ctx acc n]
+            (fn [state value error]
+              (let [acc (rf acc value)
+                    n+1 (inc n)]
+                (reply/continue p state ctx
+                  :ok   ok-throw
+                  :ok!  (if (= n+1 max)
+                          (ok!-complete ctx acc)
+                          (ok!-up-to-max ctx acc n+1))
+                  :fail (fail-complete ctx acc error)))))
+          ;; No max: Continue until `p` fails.
+          (ok!-no-max [ctx acc]
+            (fn [state value error]
+              (let [acc (rf acc value)]
+                (reply/continue p state ctx
+                  :ok   ok-throw
+                  :ok!  (ok!-no-max ctx acc)
+                  :fail (fail-complete ctx acc error)))))
+          ;; Parser without `min`.
+          (repeat-no-min [state ctx]
+            (reply/continue p state ctx
+              :ok   ok-throw
+              :ok!  (ok!-check-max ctx (rf) 1)
+              :fail (fn [s e]
+                      (reply/ok ctx s nil e))))
+          ;; Parser with `min`.
+          (repeat-min [state ctx]
+            (reply/continue p state ctx
+              :ok  ok-throw
+              :ok! (ok!-expect-min ctx (rf) 1)))]
+    (if (zero? min)
+      repeat-no-min
+      repeat-min)))
 
-;; fparsec: parray
+;; fparsec: parray, +skipArray
 (defn repeat
-  {:arglists '([p n] [p min max])}
   ([p n]
-   (cats (core/repeat n p)))
-  ([p min-n max-n]
-   {:pre [(<= min-n max-n)]}
-   (core/let [d (- max-n min-n)]
-     (if (zero? d)
-       (repeat p min-n)
-       (cat (repeat p min-n) (max p d))))))
+   (reduce-repeat `repeat p seqexp-rf n n))
+  ([p min max]
+   (reduce-repeat `repeat p seqexp-rf min max)))
 
 (defn min [p n]
-  (cat (repeat p n) (* p)))
+  (reduce-repeat `min p seqexp-rf n nil))
 
-;; TODO: Skip variants
+(defn max [p n]
+  (reduce-repeat `max p seqexp-rf 0 n))
 
 ;; fparsec: sepBy, sepEndBy, manyTill + variants
 ;; fparsec: chainl, chainr, + variants
