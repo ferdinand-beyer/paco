@@ -9,16 +9,16 @@
   (-reduce-msgs [error f result]))
 
 (defprotocol IMessage
-  (-type [msg])
+  (-msg-type [msg])
   (-write-msg! [msg writer opts])
-  (-msg-compare [msg other]))
+  (-compare-msgs [msg other]))
 
 (defn message?
   ([x]
    (satisfies? IMessage x))
   ([x type]
    (and (satisfies? IMessage x)
-        (= type (-type x)))))
+        (= type (-msg-type x)))))
 
 (defn- reduce-msgs [error f result]
   (cond
@@ -48,11 +48,39 @@
   [error]
   (persistent! (reduce-msgs error conj! (transient #{}))))
 
+(def ^:private type-priority
+  (zipmap [::expected
+           ::expected-input
+           ::unexpected
+           ::unexpected-input
+           ::message
+           ::nested
+           ::compound
+           ::other]
+          (range)))
+
+(defn- compare-types [t1 t2]
+  (let [p1 (type-priority t1)
+        p2 (type-priority t2)]
+    (if (nil? p1)
+      (if (nil? p2)
+        (compare t1 t2)
+        1)
+      (if (nil? p2)
+        -1
+        (compare p1 p2)))))
+
+(defn- compare-msgs [m1 m2]
+  (let [d (compare-types (-msg-type m1) (-msg-type m2))]
+    (if (zero? d)
+      (-compare-msgs m1 m2)
+      d)))
+
 ;; fparsec: ToSortedArray
 (defn sort-messages
   "Returns a sorted sequence of error messages."
   [error]
-  (sort -msg-compare (message-set error)))
+  (sort compare-msgs (message-set error)))
 
 ;;---------------------------------------------------------
 ;; Writing
@@ -81,7 +109,7 @@
    ::compound ::compound})
 
 (defn- msg-group [msg]
-  (type-group (-type msg) ::other))
+  (type-group (-msg-type msg) ::other))
 
 ;; TODO: Options: multiline ('\n' or ';'), prefix such as "Parse Error: "
 ;; TODO: Pretty-printing with source line and ^ marker
@@ -138,56 +166,28 @@
 ;;---------------------------------------------------------
 ;; Messages
 
-(def ^:private type-priority
-  (zipmap [::expected
-           ::expected-input
-           ::unexpected
-           ::unexpected-input
-           ::message
-           ::nested
-           ::compound
-           ::other]
-          (range)))
-
-(defn- compare-types [t1 t2]
-  (let [p1 (type-priority t1)
-        p2 (type-priority t2)]
-    (if (nil? p1)
-      (if (nil? p2)
-        (compare t1 t2)
-        1)
-      (if (nil? p2)
-        -1
-        (compare p1 p2)))))
-
 (defrecord Label [type label]
   IMessage
-  (-type [_] type)
+  (-msg-type [_] type)
   (-write-msg! [_ writer _opts] (write! writer label))
-  (-msg-compare [_ other]
-    (let [d (compare-types type (-type other))]
-      (if (zero? d)
-        (compare label (.-label ^Label other))
-        d))))
+  (-compare-msgs [_ other]
+    (compare label (.-label ^Label other))))
 
 (defrecord Input [type input]
   IMessage
-  (-type [_] type)
+  (-msg-type [_] type)
   (-write-msg! [_ writer _opts]
     (let [quote (if (str/includes? input "'") "\"" "'")]
       (write! writer quote)
       (write! writer input)
       (write! writer quote)))
-  (-msg-compare [_ other]
-    (let [d (compare-types type (-type other))]
-      (if (zero? d)
-        (compare input (.-input ^Input other))
-        d))))
+  (-compare-msgs [_ other]
+    (compare input (.-input ^Input other))))
 
 ;; alternative name: backtracked
 (defrecord Nested [type label pos error]
   IMessage
-  (-type [_] type)
+  (-msg-type [_] type)
   (-write-msg! [_ writer opts]
     (case type
       ::nested   (write! writer "backtracked after: ")
@@ -195,18 +195,15 @@
                    (write! writer label)
                    (write! writer " could not be parsed because: ")))
     (write-messages! error writer pos opts))
-  (-msg-compare [_ other]
-    (let [d (compare-types type (-type other))]
-      (if (zero? d)
-        (let [d (compare pos (.-pos ^Nested other))]
-          (if (zero? d)
-            (let [d (compare label (.-label ^Nested other))]
-              (if (zero? d)
-                (compare (sort-messages error)
-                         (sort-messages (.-error ^Nested other)))
-                d))
-            d))
-        d))))
+  (-compare-msgs [_ other]
+    (let [dpos (compare pos (.-pos ^Nested other))]
+      (if (zero? dpos)
+        (let [dlabel (compare label (.-label ^Nested other))]
+          (if (zero? dlabel)
+            (compare (sort-messages error)
+                     (sort-messages (.-error ^Nested other)))
+            dlabel))
+        dpos))))
 
 (defn expected
   "The input does not match the expected input.

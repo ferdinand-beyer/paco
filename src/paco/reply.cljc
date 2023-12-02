@@ -2,7 +2,7 @@
   (:require [paco.error :as error])
   #?(:cljs (:require-macros [paco.reply])))
 
-(deftype Context [ok ok! fail fail!])
+(defrecord Context [ok ok! fail fail!])
 
 (defn context
   ([ok fail]
@@ -35,12 +35,11 @@
   ((.-fail! ctx) state error))
 
 (defn- emit-ctx-get [ctx k]
-  (-> #?(:bb k
-         :default (case k
-                    :ok    '.-ok
-                    :ok!   '.-ok!
-                    :fail  '.-fail
-                    :fail! '.-fail!))
+  (-> (case k
+        :ok    '.-ok
+        :ok!   '.-ok!
+        :fail  '.-fail
+        :fail! '.-fail!)
       (list ctx)))
 
 (defn- emit-with-arg [ctx binding-map k]
@@ -54,7 +53,7 @@
     (let [binding-map (apply hash-map bindings)
           hinted-ctx  (with-meta (gensym "ctx_") {:tag `Context})]
       `(let [~hinted-ctx ~ctx]
-         (#?(:bb ->Context, :default Context.)
+         (Context.
           ~(emit-with-arg hinted-ctx binding-map :ok)
           ~(emit-with-arg hinted-ctx binding-map :ok!)
           ~(emit-with-arg hinted-ctx binding-map :fail)
