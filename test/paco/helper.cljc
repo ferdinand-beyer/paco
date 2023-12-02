@@ -3,7 +3,7 @@
             [paco.reply :as reply]
             [paco.state :as state]))
 
-(defn result [ok? changed? state value error]
+(defn reply [ok? changed? state value error]
   {:ok?      ok?
    :fail?    (not ok?)
    :changed? changed?
@@ -15,13 +15,13 @@
 (def ctx
   (reply/context
     (fn [state value error]
-      (result true false state value error))
+      (reply true false state value error))
     (fn [state value error]
-      (result true true state value error))
+      (reply true true state value error))
     (fn [state error]
-      (result false false state nil error))
+      (reply false false state nil error))
     (fn [state error]
-      (result false true state nil error))))
+      (reply false true state nil error))))
 
 (defn run
   ([p]

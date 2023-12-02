@@ -122,16 +122,16 @@
    values with the reducing function `f`."
   [f ps]
   (letfn [(run-fn [p run-next]
-            (fn [result error state ctx]
+            (fn [acc error state ctx]
               (reply/continue p state ctx
                 :ok   (fn [s1 v1 e1]
-                        (run-next (f result v1) (error/merge error e1) s1 ctx))
+                        (run-next (f acc v1) (error/merge error e1) s1 ctx))
                 :ok!  (fn [s1 v1 e1]
-                        (run-next (f result v1) e1 s1 (reply/with ctx, :ok :ok!, :fail :fail!)))
+                        (run-next (f acc v1) e1 s1 (reply/with ctx, :ok :ok!, :fail :fail!)))
                 :fail (fn fail [s1 e1]
                         (reply/fail ctx s1 (error/merge error e1))))))
-          (complete [result error state ctx]
-            (reply/ok ctx state (f result) error))
+          (complete [acc error state ctx]
+            (reply/ok ctx state (f acc) error))
           (compile [ps]
             (if-let [p (first ps)]
               (run-fn p (compile (next ps)))
@@ -242,12 +242,14 @@
     (reply/continue p state ctx
       :fail! (reply/fail-backtrack ctx state))))
 
-(defn ??
-  "Applies `p`.  If `p` fails, `??` will backtrack to the original state
+;; or: ?!, ?try
+;; not to be confused with regex negative look-ahead (?!...)
+(defn ?!
+  "Applies `p`.  If `p` fails, `?!` will backtrack to the original state
    and succeed with `not-found` or `nil`.
 
-   `(?? p)` is an optimized implementation of `(? (attempt p))`."
-  ([p] (?? p nil))
+   `(?! p)` is an optimized implementation of `(? (attempt p))`."
+  ([p] (?! p nil))
   ([p not-found]
    (fn [state ctx]
      (reply/continue p state ctx
@@ -300,6 +302,8 @@
 ;; fparsec: followedBy, followedByL, notFollowedBy, notFollowedByL
 ;; fparsec: lookAhead
 
+;; names: ?=, ?!, ?<=, ?<!
+
 ;;---------------------------------------------------------
 ;; Customizing error messages
 
@@ -330,9 +334,7 @@
                 (reply/ok ctx s1 v1 error))
         :fail (fn [s1 e1]
                 (if (error/message? e1 ::error/nested)
-                  (reply/fail ctx s1 (assoc e1
-                                            :type ::error/compound
-                                            :label label))
+                  (reply/fail ctx s1 (error/nested->compound e1 label))
                   (reply/fail ctx s1 error)))
         :fail! (fn [s1 e1]
                  (reply/fail! ctx state (error/compound label s1 e1)))))))
@@ -340,18 +342,28 @@
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
 
-(defn- cat-rf
-  ([] (transient []))
-  ([xs] (persistent! xs))
-  ([xs x]
-   (cond
-     (nil? x) xs
-     (sequential? x) (reduce conj! xs x)
-     :else (conj! xs x))))
+(def ^:private ^:const seqexp-tag ::seqexp)
+(def ^:private ^:const seqexp-meta {seqexp-tag true})
 
-;; like group, but flattens
+(defn- seqexp-rf
+  "Reducing function for 'sequence expression' parsers."
+  ([] (transient []))
+  ([xs]
+   (-> xs
+       persistent!
+       (with-meta seqexp-meta)))
+  ([xs x]
+   (if (nil? x)
+     xs
+     (if (seqexp-tag (meta x))
+       (reduce conj! xs x)
+       (conj! xs x)))))
+
+(defn cats [ps]
+  (reduce-sequence seqexp-rf ps))
+
 (defn cat [& ps]
-  (reduce-sequence cat-rf ps))
+  (reduce-sequence seqexp-rf ps))
 
 ;; alternative names: opt, maybe
 (defn ?
@@ -381,14 +393,14 @@
   [sym zero f p]
   (letfn [(ok-throw [_ _ _]
             (throw (state-unchanged-exception sym p)))
-          (make-ok! [ctx result]
+          (make-ok! [ctx acc]
             (fn [state value error]
-              (core/let [result (f result value)]
+              (core/let [acc' (f acc value)]
                 (reply/continue p state ctx
                   :ok   ok-throw
-                  :ok!  (make-ok! ctx result)
+                  :ok!  (make-ok! ctx acc')
                   :fail (fn [s2 e2]
-                          (reply/ok! ctx s2 (f result) (error/merge error e2)))))))]
+                          (reply/ok! ctx s2 (f acc') (error/merge error e2)))))))]
     (fn [state ctx]
       (reply/continue p state ctx
         :ok   ok-throw
@@ -404,30 +416,32 @@
 (defn *
   "Zero or more."
   [p]
-  (reduce-many `* zero-ok vec-rf p))
+  (reduce-many `* zero-ok seqexp-rf p))
 
 (defn +
   "One or more."
   [p]
-  (reduce-many `+ zero-fail vec-rf p))
+  (reduce-many `+ zero-fail seqexp-rf p))
 
+;; or: *skip
 (defn skip* [p]
   (reduce-many `skip* zero-ok ignore p))
 
+;; or: +skip
 (defn skip+ [p]
   (reduce-many `skip+ zero-fail ignore p))
 
 (defn max [p n]
-  (cond
-    (< n 1) pnil
-    (= n 1) (? (pipe p list))
-    :else   (? (pipe p (max (dec n) p) cons))))
+  (if (< n 1)
+    (return (with-meta () seqexp-meta))
+    (? (pipe p (max p (dec n)) (fn [x xs]
+                                 (with-meta (cons x xs) seqexp-meta))))))
 
 ;; fparsec: parray
 (defn repeat
   {:arglists '([p n] [p min max])}
   ([p n]
-   (sequence (core/repeat n p)))
+   (cats (core/repeat n p)))
   ([p min-n max-n]
    {:pre [(<= min-n max-n)]}
    (core/let [d (- max-n min-n)]

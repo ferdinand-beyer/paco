@@ -123,7 +123,7 @@
                   (c/string "foox"))
            "foox")
 
-  (p/parse (p/cat (p/?? (p/cat (c/string "foo")
+  (p/parse (p/cat (p/?! (p/cat (c/string "foo")
                                (c/string "bar")))
                   (c/string "foox"))
            "foox")
@@ -133,7 +133,7 @@
                   (c/string "foox"))
            "foox")
 
-  (let [p (p/cat (p/?? (p/cat (c/string "foo")
+  (let [p (p/cat (p/?! (p/cat (c/string "foo")
                               (c/string "bar")))
                  (c/string "foox"))]
     (criterium/quick-bench

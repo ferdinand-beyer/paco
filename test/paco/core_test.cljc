@@ -1,129 +1,130 @@
 (ns paco.core-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [clojure.test :refer [deftest is testing]]
             [paco.chars :as c]
             [paco.core :as p]
             [paco.error :as error]
-            [paco.helper :as helper]))
+            [paco.helper :as helper])
+  #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (deftest pnil-test
-  (let [result (helper/run p/pnil)]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (nil? (:value result)))
-    (is (nil? (:error result)))))
+  (let [reply (helper/run p/pnil)]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (nil? (:error reply)))))
 
 (deftest fail-test
-  (let [result (helper/run (p/fail "boom!"))]
-    (is (:fail? result))
-    (is (not (:changed? result)))
-    (is (nil? (:value result)))
-    (is (= (error/message "boom!") (:error result)))))
+  (let [reply (helper/run (p/fail "boom!"))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (= (error/message "boom!") (:error reply)))))
 
 (deftest return-test
-  (let [result (helper/run (p/return 1))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 1 (:value result)))
-    (is (nil? (:error result))))
+  (let [reply (helper/run (p/return 1))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 1 (:value reply)))
+    (is (nil? (:error reply))))
 
-  (let [result (helper/run (p/return (p/return 1) 2))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 2 (:value result))))
+  (let [reply (helper/run (p/return (p/return 1) 2))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 2 (:value reply))))
 
-  (let [result (helper/run (p/return helper/any 2) "test")]
-    (is (:ok? result))
-    (is (:changed? result))
-    (is (= 2 (:value result))))
+  (let [reply (helper/run (p/return helper/any 2) "test")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= 2 (:value reply))))
 
-  (let [result (helper/run (p/return (p/fail "boom!") 2))]
-    (is (:fail? result))
-    (is (not (:changed? result)))))
+  (let [reply (helper/run (p/return (p/fail "boom!") 2))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))))
 
 (deftest bind-test
-  (let [result (helper/run (p/bind (p/return 1) #(p/return [% 2])))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= [1 2] (:value result))))
+  (let [reply (helper/run (p/bind (p/return 1) #(p/return [% 2])))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= [1 2] (:value reply))))
 
-  (let [result (helper/run (p/bind helper/any #(p/return [% 2])) "test")]
-    (is (:ok? result))
-    (is (:changed? result))
-    (is (= [\t 2] (:value result))))
+  (let [reply (helper/run (p/bind helper/any #(p/return [% 2])) "test")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\t 2] (:value reply))))
 
-  (let [result (helper/run (p/bind p/pnil (constantly helper/any)) "test")]
-    (is (:ok? result))
-    (is (:changed? result))
-    (is (= \t (:value result)))))
+  (let [reply (helper/run (p/bind p/pnil (constantly helper/any)) "test")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= \t (:value reply)))))
 
 (deftest pipe-test
-  (let [result (helper/run (p/pipe (p/return 1) inc))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 2 (:value result))))
+  (let [reply (helper/run (p/pipe (p/return 1) inc))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 2 (:value reply))))
 
-  (let [result (helper/run (p/pipe (p/return 1) (p/return 2) +))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 3 (:value result))))
+  (let [reply (helper/run (p/pipe (p/return 1) (p/return 2) +))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 3 (:value reply))))
 
-  (let [result (helper/run (p/pipe (p/return 1) (p/return 2) (p/return 3) +))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 6 (:value result))))
+  (let [reply (helper/run (p/pipe (p/return 1) (p/return 2) (p/return 3) +))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 6 (:value reply))))
 
-  (let [result (helper/run (p/pipe (p/return 1) (p/return 2) (p/return 3)
-                                   (p/return 4) +))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 10 (:value result))))
+  (let [reply (helper/run (p/pipe (p/return 1) (p/return 2) (p/return 3)
+                                  (p/return 4) +))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 10 (:value reply))))
 
-  (let [result (helper/run (p/pipe (p/return 1) (p/return 2) (p/return 3)
-                                   (p/return 4) (p/return 5) +))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= 15 (:value result))))
+  (let [reply (helper/run (p/pipe (p/return 1) (p/return 2) (p/return 3)
+                                  (p/return 4) (p/return 5) +))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 15 (:value reply))))
 
-  (let [result (helper/run (p/pipe helper/any helper/any helper/any vector) "abc")]
-    (is (:ok? result))
-    (is (:changed? result))
-    (is (= [\a \b \c] (:value result))))
+  (let [reply (helper/run (p/pipe helper/any helper/any helper/any vector) "abc")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\a \b \c] (:value reply))))
 
-  (let [result (helper/run (p/pipe helper/any helper/any helper/any
-                                   helper/any helper/any helper/any
-                                   vector) "abcdef")]
-    (is (:ok? result))
-    (is (:changed? result))
-    (is (= [\a \b \c \d \e \f] (:value result))))
+  (let [reply (helper/run (p/pipe helper/any helper/any helper/any
+                                  helper/any helper/any helper/any
+                                  vector) "abcdef")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\a \b \c \d \e \f] (:value reply))))
 
-  (let [result (helper/run (p/pipe helper/any helper/any helper/any
-                                   helper/any helper/any helper/any
-                                   (p/fail "boom!") vector) "abcdef")]
-    (is (:fail? result))
-    (is (:changed? result))
-    (is (nil? (:value result)))
-    (is (= (error/message "boom!") (:error result)))))
+  (let [reply (helper/run (p/pipe helper/any helper/any helper/any
+                                  helper/any helper/any helper/any
+                                  (p/fail "boom!") vector) "abcdef")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (nil? (:value reply)))
+    (is (= (error/message "boom!") (:error reply)))))
 
 (deftest sequence-test
-  (let [result (helper/run (p/sequence [(p/return :begin) (p/return :end)]))]
-    (is (:ok? result))
-    (is (not (:changed? result)))
-    (is (= [:begin :end] (:value result))))
+  (let [reply (helper/run (p/sequence [(p/return :begin) (p/return :end)]))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= [:begin :end] (:value reply))))
 
-  (let [result (helper/run (p/sequence [(p/return :begin) helper/any (p/return :end)]) "test")]
-    (is (:ok? result))
-    (is (:changed? result))
-    (is (= [:begin \t :end] (:value result))))
+  (let [reply (helper/run (p/sequence [(p/return :begin) helper/any (p/return :end)]) "test")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [:begin \t :end] (:value reply))))
 
-  (let [result (helper/run (p/sequence [(p/return :begin) (p/fail "boom!")]))]
-    (is (:fail? result))
-    (is (not (:changed? result)))
-    (is (= (error/message "boom!") (:error result))))
+  (let [reply (helper/run (p/sequence [(p/return :begin) (p/fail "boom!")]))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= (error/message "boom!") (:error reply))))
 
-  (let [result (helper/run (p/sequence [helper/any (p/fail "boom!")]) "test")]
-    (is (:fail? result))
-    (is (:changed? result))
-    (is (= (error/message "boom!") (:error result)))))
+  (let [reply (helper/run (p/sequence [helper/any (p/fail "boom!")]) "test")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= (error/message "boom!") (:error reply)))))
 
 (deftest group-test
   (is (= [\a \b \c] (p/parse (p/group helper/any helper/any helper/any) "abcdef"))))
@@ -140,12 +141,300 @@
                                   (p/return (c/string-i "foo fighters") :foo-fighters))
                            (p/parse "Foo Fighters are a band"))))
 
-  (let [result (helper/run (p/attempt helper/any))]
-    (is (:fail? result))
-    (is (not (:changed? result)))
-    (is (= error/unexpected-eof (:error result))))
+  (let [reply (helper/run (p/attempt helper/any))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply))))
 
-  (let [result (helper/run (p/attempt (p/>> helper/any helper/any)) "x")]
-    (is (:fail? result))
-    (is (not (:changed? result)))
-    (is (= ::error/nested (get-in result [:error :type])))))
+  (let [reply (helper/run (p/attempt (p/>> helper/any helper/any)) "x")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= ::error/nested (get-in reply [:error :type])))
+    (is (= ::error/unexpected (get-in reply [:error :error :type])))))
+
+(deftest ?!-test
+  (let [reply (helper/run (p/?! helper/any))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/?! helper/any ::default))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= ::default (:value reply))))
+
+  (let [reply (helper/run (p/?! (p/>> helper/any helper/any)) "x")]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= ::error/nested (get-in reply [:error :type]))))
+
+  (let [reply (helper/run (p/?! (p/>> helper/any helper/any) ::default) "x")]
+    (is (:ok? reply))
+    (is (= ::default (:value reply)))))
+
+(deftest alt-test
+  (is (= \b (p/parse (p/alt (c/char \a) (c/char \b)) "bingo")))
+
+  (let [reply (helper/run (p/alt (p/return 1) helper/any))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 1 (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/alt helper/any (p/return 1)))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= 1 (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/alt (c/char \x) helper/any) "test")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= \t (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/alt (p/fail "boom!") (p/fail "bang!")))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= #{(error/message "boom!")
+             (error/message "bang!")}
+           (:messages reply)))))
+
+(deftest alts-test
+  (let [reply (helper/run (p/alts [(p/fail "boom!") helper/any]) "test")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= \t (:value reply)))
+    (is (nil? (:error reply))))
+
+  (testing "reports 'expected' error with given label"
+    (let [reply (helper/run (p/alts [(p/fail "boom!") (p/fail "bang!")] "failure"))]
+      (is (:fail? reply))
+      (is (not (:changed? reply)))
+      (is (= (error/expected "failure") (:error reply))))))
+
+(deftest as-test
+  (let [reply (helper/run (p/as helper/any "something"))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= (error/expected "something") (:error reply))))
+
+  (let [reply (helper/run (p/as helper/any "something") "test")]
+    (is (:ok? reply))
+    (is (= \t (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/as (p/>> helper/any helper/any) "something") "x")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= error/unexpected-eof (:error reply)))))
+
+(deftest as!-test
+  (let [reply (helper/run (p/as! helper/any "something"))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= (error/expected "something") (:error reply))))
+
+  (let [reply (helper/run (p/as! helper/any "something") "test")]
+    (is (:ok? reply))
+    (is (= \t (:value reply)))
+    (is (nil? (:error reply))))
+
+  (testing "reports compound error"
+    (let [reply (helper/run (p/as! (p/>> helper/any helper/any) "something") "x")]
+      (is (:fail? reply))
+      (is (:changed? reply))
+      (is (= ::error/compound (get-in reply [:error :type])))
+      (is (= "something" (get-in reply [:error :label]))))
+
+    (let [reply (helper/run (-> (p/>> helper/any helper/any)
+                                (p/as! "two chars")
+                                p/attempt)
+                            "x")]
+      (is (:fail? reply))
+      (is (= ::error/nested (get-in reply [:error :type])))
+      (is (= ::error/compound (get-in reply [:error :error :type])))
+      (is (= ::error/unexpected (get-in reply [:error :error :error :type]))))))
+
+(deftest cat-test
+  (is (= [\a \b \c \d] (p/parse (p/cat (p/cat helper/any helper/any)
+                                       (p/cat helper/any helper/any))
+                                "abcd"))))
+
+(deftest ?-test
+  (let [reply (helper/run (p/? helper/any) "x")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= \x (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/? helper/any))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/? helper/any ::default))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= ::default (:value reply)))
+    (is (= error/unexpected-eof (:error reply)))))
+
+(deftest *-test
+  (is (empty? (p/parse (p/* (c/char \a)) "bbb")))
+  (is (= [\a \a \a] (p/parse (p/* (c/char \a)) "aaabbb")))
+
+  (is (thrown? ExceptionInfo (helper/run (p/* p/pnil)))
+      "must not accept empty input")
+
+  (let [reply (helper/run (p/* helper/any))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (empty? (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/* (c/char \a)) "ab")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\a] (:value reply)))
+    (is (= #{(error/expected-input \a)
+             (error/unexpected-input \b)}
+           (:messages reply)))))
+
+(deftest +-test
+  (let [reply (helper/run (p/+ helper/any))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply)))))
+
+(deftest min-test
+  (let [reply (helper/run (p/min helper/any 2))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/min helper/any 2) "x")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/min helper/any 2) "xx")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x] (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/min helper/any 2) "abcdef")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\a \b \c \d \e \f] (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/min (c/char \x) 2) "xxxy")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x \x] (:value reply)))
+    (is (= #{(error/expected-input \x)
+             (error/unexpected-input \y)}
+           (:messages reply)))))
+
+(deftest max-test
+  (let [reply (helper/run (p/max helper/any 2))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (empty? (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/max helper/any 2) "x")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x] (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/max helper/any 2) "xx")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x] (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/max helper/any 2) "abcdef")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\a \b] (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/max (c/char \x) 3) "xxy")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x] (:value reply)))
+    (is (= #{(error/expected-input \x)
+             (error/unexpected-input \y)}
+           (:messages reply)))))
+
+(deftest repeat-test
+  (let [reply (helper/run (p/repeat helper/any 2))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/repeat helper/any 2) "x")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/repeat helper/any 2) "xx")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x] (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/repeat helper/any 2) "xxxy")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x] (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/repeat helper/any 2 3) "x")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/repeat helper/any 2 3) "xx")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x] (:value reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/repeat (c/char \x) 2 3) "xxxyy")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (= [\x \x \x] (:value reply)))
+    (is (nil? (:error reply)))))
+
+(deftest seqexp-test
+  (let [p (p/cat (p/* (c/char \a))
+                 (p/+ (c/char \b)))]
+    (is (= [\b] (p/parse p "b")))
+    (is (= [\b] (p/parse p "bcc")))
+    (is (= [\a \b \b] (p/parse p "abb")))
+    (is (= [\a \a \a \b] (p/parse p "aaabc"))))
+
+  (let [p (p/cat (p/* (p/cat (c/char \a) (c/char \b)))
+                 (p/+ (c/char \c)))]
+    (is (= [\c] (p/parse p "cdef")))
+    (is (= [\a \b \a \b \c] (p/parse p "ababc"))))
+
+  (let [p (p/cat (p/* (p/group (c/char \a) (c/char \b)))
+                 (p/+ (c/char \c)))]
+    (is (= [[\a \b] [\a \b] \c] (p/parse p "ababc"))))
+
+  (let [p (p/cat (p/* (c/char \a))
+                 (p/max (c/char \b) 3)
+                 (p/? (c/char \c))
+                 (p/min (c/char \d) 2)
+                 (p/repeat (c/char \e) 3)
+                 (p/repeat (c/char \f) 0 3)
+                 (p/+ (c/char \g)))]
+    (is (:fail? (helper/run p "abcdefg")))
+    (is (= [\b \d \d \e \e \e \g] (p/parse p "bddeeeg")))))
