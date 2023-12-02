@@ -1,1 +1,2 @@
-{:config-paths ["../resources/clj-kondo.exports/com.fbeyer/paco"]}
+{:config-paths ["../resources/clj-kondo.exports/com.fbeyer/paco"]
+ :lint-as {bench.direct/with-reply clojure.core/let}}
