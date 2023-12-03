@@ -1,35 +1,27 @@
 (ns paco.helper
-  (:require [paco.error :as error]
-            [paco.reply :as reply]
+  (:require [paco.detail :as detail]
+            [paco.error :as error]
             [paco.state :as state]))
 
-(defn reply [ok? changed? state value error]
-  {:ok?      ok?
-   :fail?    (not ok?)
-   :changed? changed?
-   :state    state
-   :value    value
-   :error    error
-   :messages (error/message-set error)})
-
-(def ctx
-  (reply/context
-    (fn [state value error]
-      (reply true false state value error))
-    (fn [state value error]
-      (reply true true state value error))
-    (fn [state error]
-      (reply false false state nil error))
-    (fn [state error]
-      (reply false true state nil error))))
+(defn- reply-fn [initial-state]
+  (fn [status state value error]
+    {:status   status
+     :ok?      (detail/ok? status)
+     :fail?    (detail/fail? status)
+     :changed? (not (detail/same-state? state initial-state))
+     :state    state
+     :value    value
+     :error    error
+     :messages (error/message-set error)}))
 
 (defn run
   ([p]
    (run p ""))
   ([p input]
-   (trampoline #(p (state/of input nil) ctx))))
+   (let [state (state/of input nil)]
+     (detail/run-parser p state (reply-fn state)))))
 
-(defn any [state ctx]
-  (if-let [tok (state/peek state)]
-    (reply/ok! ctx (state/skip state 1) tok)
-    (reply/fail ctx state error/unexpected-eof)))
+(defn any [state reply]
+  (if-let [token (state/peek state)]
+    (reply detail/ok (state/skip state 1) token nil)
+    (reply detail/fail state nil error/unexpected-eof)))

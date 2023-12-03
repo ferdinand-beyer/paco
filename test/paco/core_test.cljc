@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [paco.chars :as c]
             [paco.core :as p]
+            [paco.detail :as detail]
             [paco.error :as error]
             [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
@@ -40,6 +41,19 @@
   (let [reply (helper/run (p/return (p/fail "boom!") 2))]
     (is (:fail? reply))
     (is (not (:changed? reply)))))
+
+(deftest eof-test
+  (let [reply (helper/run p/eof)]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run p/eof "test")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (= error/expected-eof (:error reply)))))
 
 (deftest bind-test
   (let [reply (helper/run (p/bind (p/return 1) #(p/return [% 2])))]
@@ -243,8 +257,8 @@
 
   (testing "reports compound error"
     (let [reply (helper/run (p/as! (p/>> helper/any helper/any) "something") "x")]
-      (is (:fail? reply))
-      (is (:changed? reply))
+      (is (= ::detail/fatal (:status reply)))
+      (is (not (:changed? reply)))
       (is (= ::error/compound (get-in reply [:error :type])))
       (is (= "something" (get-in reply [:error :label]))))
 
@@ -252,10 +266,9 @@
                                 (p/as! "two chars")
                                 p/attempt)
                             "x")]
-      (is (:fail? reply))
-      (is (= ::error/nested (get-in reply [:error :type])))
-      (is (= ::error/compound (get-in reply [:error :error :type])))
-      (is (= ::error/unexpected (get-in reply [:error :error :error :type]))))))
+      (is (= ::detail/fail (:status reply)))
+      (is (= ::error/compound (get-in reply [:error :type])))
+      (is (= ::error/unexpected (get-in reply [:error :error :type]))))))
 
 (deftest cat-test
   (is (= [\a \b \c \d] (p/parse (p/cat (p/cat helper/any helper/any)
