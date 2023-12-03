@@ -164,7 +164,7 @@
 ;; since it is a special form (paco.core/do) ;=> nil
 ;; alternative names: then, pdo
 (defn >> [& ps]
-  (detail/reduce-sequence detail/then-rf ps))
+  (detail/reduce-sequence detail/last-rf ps))
 
 ;; fparsec: .>> - return the first result
 ;; fparsetc: .>>.: like (cat p1 p2)
@@ -367,14 +367,9 @@
 ;;---------------------------------------------------------
 ;; Lazy / recursive
 
-(defn- lazy* [dp]
-  (fn [state reply]
-    (let [p (force dp)]
-      (detail/thunk (p state reply)))))
-
 ;; Note that we can use #'var as well
 (defmacro lazy [& body]
-  `(lazy* (delay ~@body)))
+  `(detail/pforce (delay ~@body)))
 
 ;; fparsec: createParserForwardedToRef
 (defn ref
@@ -428,14 +423,12 @@
 
 (defn match-user-state
   "Succeeds if `pred` returns logical true when called with the current
-   user state, otherwise it fails."
-  ([pred]
-   (match-user-state pred nil))
-  ([pred value]
-   (fn [state reply]
-     (if (pred (state/user-state state))
-       (reply detail/ok state value nil)
-       (reply detail/fail state nil error/no-message)))))
+   user state, otherwise it fails.  Returns the return value of `pred`."
+  [pred]
+  (fn [state reply]
+    (if-let [ret (pred (state/user-state state))]
+      (reply detail/ok state ret nil)
+      (reply detail/fail state nil error/no-message))))
 
 (comment
   ;; Idea: Coerce values to parser functions

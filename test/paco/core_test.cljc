@@ -4,7 +4,8 @@
             [paco.core :as p]
             [paco.detail :as detail]
             [paco.error :as error]
-            [paco.helper :as helper])
+            [paco.helper :as helper]
+            [paco.pos :as pos])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (deftest pnil-test
@@ -70,6 +71,11 @@
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= \t (:value reply)))))
+
+(deftest with-test
+  (let [p (p/with [a helper/any, b helper/any, c helper/any]
+            (p/return (zipmap [:a :b :c] [a b c])))]
+    (is (= {:a \a, :b \b, :c \c} (p/parse p "abcdef")))))
 
 (deftest pipe-test
   (let [reply (helper/run (p/pipe (p/return 1) inc))]
@@ -275,6 +281,10 @@
                                        (p/cat helper/any helper/any))
                                 "abcd"))))
 
+(deftest cats-test
+  (is (= [\a \b \c] (p/parse (p/cats [helper/any helper/any helper/any])
+                             "abcd"))))
+
 (deftest ?-test
   (let [reply (helper/run (p/? helper/any) "x")]
     (is (:ok? reply))
@@ -319,6 +329,34 @@
   (let [reply (helper/run (p/+ helper/any))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply)))))
+
+(deftest skip*-test
+  (let [reply (helper/run (p/skip* helper/any))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/skip* helper/any) "xxxx")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (nil? (:value reply)))
+    (is (= 0 (-> reply :state pos/line-index)))
+    (is (= 4 (-> reply :state pos/column-index)))
+    (is (= error/unexpected-eof (:error reply)))))
+
+(deftest skip+-test
+  (let [reply (helper/run (p/skip+ helper/any))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-eof (:error reply))))
+
+  (let [reply (helper/run (p/skip+ helper/any) "xxxx")]
+    (is (:ok? reply))
+    (is (:changed? reply))
+    (is (nil? (:value reply)))
+    (is (= 0 (-> reply :state pos/line-index)))
+    (is (= 4 (-> reply :state pos/column-index)))
     (is (= error/unexpected-eof (:error reply)))))
 
 (deftest min-test
@@ -450,4 +488,90 @@
                  (p/repeat (c/char \f) 0 3)
                  (p/+ (c/char \g)))]
     (is (:fail? (helper/run p "abcdefg")))
-    (is (= [\b \d \d \e \e \e \g] (p/parse p "bddeeeg")))))
+    (is (= [\b \d \d \e \e \e \g] (p/parse p "bddeeeg"))))
+
+  (let [p (p/cat (p/skip+ (c/char \x)) (c/char \y) (p/skip* (c/char \z)))]
+    (let [reply (helper/run p "y")]
+      (is (:fail? reply))
+      (is (not (:changed? reply)))
+      (is (= #{(error/expected-input \x) (error/unexpected-input \y)} (:messages reply))))
+
+    (let [reply (helper/run p "xy")]
+      (is (:ok? reply))
+      (is (:changed? reply))
+      (is (= [\y] (:value reply)))
+      (is (= #{(error/expected-input \z) error/unexpected-eof} (:messages reply))))
+
+    (let [reply (helper/run p "xyy")]
+      (is (:ok? reply))
+      (is (:changed? reply))
+      (is (= [\y] (:value reply)))
+      (is (= #{(error/expected-input \z) (error/unexpected-input \y)} (:messages reply))))
+
+    (let [reply (helper/run p "xxxxxxxxyzzzzzzzzz")]
+      (is (:ok? reply))
+      (is (= [\y] (:value reply))))))
+
+(deftest lazy-test
+  (let [a (atom 0)
+        p (p/lazy (p/return @a))]
+    (testing "computes parser lazily"
+      (swap! a inc)
+      (is (= 1 (p/parse p ""))))
+    (testing "lazy parser is cached"
+      (swap! a inc)
+      (is (= 1 (p/parse p ""))))))
+
+(deftest ref-test
+  (let [a (atom (p/return 42))
+        p (p/ref a)]
+    (is (= 42 (p/parse p "test")))
+    (reset! a helper/any)
+    (is (= \t (p/parse p "test")))))
+
+(deftest rec-test
+  (let [p (p/rec #(p/alt (c/char \x) (p/between % (c/char \() (c/char \)))))]
+    (let [reply (helper/run p "x")]
+      (is (:ok? reply))
+      (is (:changed? reply))
+      (is (= \x (:value reply)))
+      (is (nil? (:error reply))))
+
+    (let [reply (helper/run p "(((x)))")]
+      (is (:ok? reply))
+      (is (:changed? reply))
+      (is (= \x (:value reply)))
+      (is (nil? (:error reply))))
+
+    (let [reply (helper/run p "((x)")]
+      (is (:fail? reply))
+      (is (:changed? reply))
+      (is (= #{(error/expected-input \)) error/unexpected-eof} (:messages reply))))))
+
+(deftest index-test
+  (is (= 0 (p/parse p/index "")))
+  (is (= 3 (p/parse (p/>> (p/repeat helper/any 3) p/index) "abcdef"))))
+
+(deftest pos-test
+  (is (= (pos/pos 0 0) (p/parse p/pos "")))
+  (is (= (pos/pos 1 2) (p/parse (p/>> (p/repeat c/any-char 6) p/pos) "abc\ndef"))))
+
+(deftest user-state-test
+  (let [p (p/>> (p/set-user-state {})
+                (p/* (p/bind helper/any #(p/swap-user-state update % (fnil inc 0))))
+                p/user-state)]
+    (is (= {\m 1, \i 4, \s 4, \p 2} (p/parse p "mississippi"))))
+
+  (let [reply (helper/run (p/>> (p/set-user-state 2)
+                                (p/match-user-state even?)))]
+    (is (:ok? reply))
+    (is (true? (:value reply))))
+
+  (let [reply (helper/run (p/>> (p/set-user-state 1)
+                                (p/match-user-state even?)))]
+    (is (:fail? reply))
+    (is (nil? (:error reply))))
+
+  (is (= \x (p/parse (p/>> (p/bind helper/any #(p/set-user-state %))
+                           (p/match-user-state #{\x}))
+                     "xyz"))))

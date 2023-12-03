@@ -28,3 +28,6 @@
                          (if (zero? d)
                            (compare col (.-col ^Position other))
                            d)))]))
+
+(defn pos [line-index column-index]
+  (Position. line-index column-index))

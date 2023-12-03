@@ -18,7 +18,10 @@
 (defmacro same-state? [state other]
   `(identical? ~state ~other))
 
-(defn pass-error [state error prev-state prev-error]
+(defn pass-error
+  "When `state` has changed from `prev-state`, returns the union of
+   `error` and `prev-error`.  Otherwise, returns `error`."
+  [state error prev-state prev-error]
   (if (same-state? state prev-state)
     error
     (error/merge prev-error error)))
@@ -34,8 +37,10 @@
 
 (defn ignore
   "Ignores all args and returns `nil`.  Useful for skip parsers."
-  [& _]
-  nil)
+  ([] nil)
+  ([_] nil)
+  ([_ _] nil)
+  ([_ _ _ & _] nil))
 
 (defn vector-rf
   "Reducing function that collects input in a vector.
@@ -44,7 +49,8 @@
   ([coll] (persistent! coll))
   ([coll x] (conj! coll x)))
 
-(defn then-rf
+(defn last-rf
+  "Reducing function that only keeps the last input."
   ([] nil)
   ([result] result)
   ([_ input] input))
@@ -62,7 +68,7 @@
   ([xs x]
    (if (nil? x)
      xs
-     (if (seqexp-tag (meta x))
+     (if (contains? (meta x) seqexp-tag)
        (reduce conj! xs x)
        (conj! xs x)))))
 
@@ -124,3 +130,11 @@
          (reply ok state (rf (rf)) nil))
        (fn [state reply]
          (step reply (rf) 0 state nil))))))
+
+(defn pforce
+  "Forces a possibly delayed parser `dp`.  Implementation detail of
+   the `lazy` parser."
+  [dp]
+  (fn [state reply]
+    (let [p (force dp)]
+      (thunk (p state reply)))))
