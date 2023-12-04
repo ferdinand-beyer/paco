@@ -63,6 +63,13 @@
              (error/unexpected-input \l)}
            (:messages reply)))))
 
+(deftest none-of-test
+  (is (= \l (p/parse (chars/none-of "xyz") "lion")))
+  (let [reply (helper/run (chars/none-of "xyz") "zebra")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= #{(error/unexpected-input \z)} (:messages reply)))))
+
 (deftest match-test
   (is (= \x (p/parse (chars/match #(= \x %)) "xyz")))
   (let [reply (helper/run (chars/match #(= \x %) "the letter X"))]

@@ -122,12 +122,15 @@
       (reply detail/ok (state/skip-char state) ch nil)
       (reply detail/fail state nil error/unexpected-eof))))
 
-;; fparsec: anyOf, noneOf
 ;; fparsec: + skip variants
 (defn any-of [chars]
   ;; TODO: Optimise for newlines?
   (let [error (map error/expected-input chars)]
     (match-char (set chars) state/skip-char #(error/merge error %))))
+
+(defn none-of [chars]
+  ;; TODO: (expected "any char not in ...")
+  (match-char (complement (set chars)) state/skip-char identity))
 
 (def ascii-upper
   (match ascii-upper? "ASCII upper-case letter"))
