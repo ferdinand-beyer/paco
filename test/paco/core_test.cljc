@@ -234,6 +234,12 @@
       (is (not (:changed? reply)))
       (is (= (error/expected "failure") (:error reply))))))
 
+(deftest not-empty-test
+  (is (= \t (p/parse (p/not-empty helper/any) "test")))
+  (let [reply (helper/run (p/not-empty (p/return ::empty)))]
+    (is (:fail? reply))
+    (is (nil? (:error reply)))))
+
 (deftest as-test
   (let [reply (helper/run (p/as helper/any "something"))]
     (is (:fail? reply))

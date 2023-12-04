@@ -215,11 +215,17 @@
 
 ;; ## Parse letters ##
 
+(bench-paco (p/* c/letter) "abc")
+;           Execution time mean : 203,299059 ns
+;  Execution time std-deviation : 19,281139 ns
+; Execution time lower quantile : 187,413415 ns ( 2,5%)
+; Execution time upper quantile : 233,997855 ns (97,5%)
+
 (bench-parsesso (q/*many qc/letter?) "abc")
-;             Execution time mean : 975,326535 ns
-;    Execution time std-deviation : 65,828611 ns
-;   Execution time lower quantile : 915,594047 ns ( 2,5%)
-;   Execution time upper quantile : 1,059000 µs (97,5%)
+;           Execution time mean : 233,261311 ns
+;  Execution time std-deviation : 8,188948 ns
+; Execution time lower quantile : 226,408217 ns ( 2,5%)
+; Execution time upper quantile : 245,599483 ns (97,5%)
 
 (bench-kern (k/many k/letter) "abc")
 ;             Execution time mean : 1,911586 µs

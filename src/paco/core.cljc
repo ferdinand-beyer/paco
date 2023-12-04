@@ -1,5 +1,5 @@
 (ns paco.core
-  (:refer-clojure :exclude [* + cat max min ref repeat sequence])
+  (:refer-clojure :exclude [* + cat max min not-empty ref repeat sequence])
   (:require [clojure.core :as core]
             [paco.detail :as detail]
             [paco.error :as error]
@@ -56,6 +56,8 @@
 ;;---------------------------------------------------------
 ;; Chaining and piping
 
+;; Maybe: `(chain p f1 f2 f3 ,,,)`
+;; equiv to `(bind p (fn [v1] (bind (f1 v1) (fn [v2] (bind (f2 v2) ,,,))))
 (defn bind [p f]
   (fn [state reply]
     (letfn [(reply1 [status1 state1 value1 error1]
@@ -71,15 +73,15 @@
                 (reply status1 state1 value1 error1)))]
       (detail/thunk (p state reply1)))))
 
-(defn- emit-let [bindings body]
+(defn- emit-with [bindings body]
   (core/let [[binding p] (take 2 bindings)]
     (if (= 2 (count bindings))
       ;; TODO Emit "do" body?
       `(bind ~p (fn [~binding] ~@body))
-      `(bind ~p (fn [~binding] ~(emit-let (drop 2 bindings) body))))))
+      `(bind ~p (fn [~binding] ~(emit-with (drop 2 bindings) body))))))
 
-;; TODO: Rename to `let`
-;; alternative names: let->>, >>let, let-seq, plet
+;; TODO: Rename to `let`?
+;; alternative names: let-then, let-chain, let->>, >>let, let-seq, plet
 (defmacro with
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
@@ -87,7 +89,7 @@
   {:pre [(vector? bindings)
          (even? (count bindings))
          (some? body)]}
-  (emit-let bindings body))
+  (emit-with bindings body))
 
 (defn- emit-pipe-body
   [f ps prev-state prev-reply prev-values prev-error]
@@ -143,7 +145,8 @@
 
 ;; alternative names: g, group', groups, pseq, tuples
 (defn sequence
-  "The parser `(series ps)` applies the parsers `ps` in sequence."
+  "The parser `(series ps)` applies the parsers `ps` in sequence
+   and returns a collection of their return values."
   [ps]
   (detail/reduce-sequence detail/vector-rf ps))
 
@@ -198,8 +201,8 @@
                 :else (reply status1 state1 value1 error1)))]
       (detail/thunk (p state reply1)))))
 
-;; or: ?!, ?try
 ;; not to be confused with regex negative look-ahead (?!...)
+;; alternate names: ?!, ?attempt, ?try
 (defn ?!
   "Applies `p`.  If `p` fails, `?!` will backtrack to the original state
    and succeed with `not-found` or `nil`.
@@ -215,6 +218,15 @@
                                                     (error/nested state1 error1)))
                  (reply status1 state1 value1 error1)))]
        (detail/thunk (p state reply1))))))
+
+;; TODO
+;; Maybe two variants: All errors and only when changed state (`catch` and `catch!`)
+;; `attempt` could be: `(catch p #(fail-with error))`
+;; alternate names: except
+#_(defn catch
+    "When `p` fails, backtracks and resumes with the parser returned by
+   `(f error)`."
+    [p f])
 
 (defn- alt2
   ([p1 p2]
@@ -260,8 +272,18 @@
 ;;---------------------------------------------------------
 ;; Conditional parsing and looking ahead
 
-;; fparsec: notEmpty -- require p to change parser state
-;;   e.g. to make `*` into `+`
+(defn not-empty
+  "Like `p`, but fails when `p` does not change the parser state."
+  [p]
+  (fn [state reply]
+    (letfn [(reply1 [status1 state1 value1 error1]
+              (reply (if (and (detail/ok? status1)
+                              (detail/same-state? state1 state))
+                       detail/fail
+                       status1)
+                     state1 value1 error1))]
+      (detail/thunk (p state reply1)))))
+
 ;; fparsec: followedBy, followedByL, notFollowedBy, notFollowedByL
 ;; fparsec: lookAhead
 

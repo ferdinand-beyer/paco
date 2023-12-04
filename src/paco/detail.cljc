@@ -1,5 +1,6 @@
 (ns paco.detail
-  (:require [paco.error :as error])
+  (:require [paco.error :as error]
+            [paco.state :as state])
   #?(:cljs (:require-macros [paco.detail :refer [same-state? thunk]])))
 
 (def ^:const ok ::ok)
@@ -97,11 +98,12 @@
       (fn [state reply]
         (step reply state (rf) nil)))))
 
-(defn- state-unchanged-exception [sym p]
+(defn- infinite-loop-exception [sym p state]
   (ex-info (str "Parser supplied to '" sym "' succeeded without changing the parser state")
-           {:type ::state-unchanged
-            :parser sym
-            :arg p}))
+           {:type ::infinite-loop
+            :parser p
+            :combinator sym
+            :pos (state/pos state)}))
 
 (defn reduce-repeat
   ([sym p rf min]
@@ -112,7 +114,7 @@
              (letfn [(step-reply [status state2 value error2]
                        (if (ok? status)
                          (if (same-state? state1 state2)
-                           (throw (state-unchanged-exception sym p))
+                           (throw (infinite-loop-exception sym p state1))
                            (let [acc (rf acc value)
                                  n   (inc n)]
                              (if (or (nil? max) (< n max))

@@ -1,6 +1,7 @@
 (ns paco.error
   (:refer-clojure :exclude [merge])
   (:require [clojure.string :as str]
+            [paco.pos :as pos]
             [paco.state :as state])
   (:import #?(:clj [java.io StringWriter]
               :cljs [goog.string StringBuffer])))
@@ -148,7 +149,10 @@
        (write! writer sep)
        (-write-msg! msg writer opts))
      (when pos
-       (write! writer " at ")
+       (write! writer " at line ")
+       (write! writer (inc (pos/line-index pos)))
+       (write! writer ", column ")
+       (write! writer (inc (pos/column-index pos)))
        (write! writer pos)))))
 
 (defn string
