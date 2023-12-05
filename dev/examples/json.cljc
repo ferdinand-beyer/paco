@@ -106,7 +106,7 @@
     (p/return v)))
 
 (def json
-  (p/with [v value, _ p/eof]
+  (p/with [v value, _ p/end]
     (p/return v)))
 
 (comment

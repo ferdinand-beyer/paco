@@ -43,18 +43,18 @@
     (is (:fail? reply))
     (is (not (:changed? reply)))))
 
-(deftest eof-test
-  (let [reply (helper/run p/eof)]
+(deftest end-test
+  (let [reply (helper/run p/end)]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
     (is (nil? (:error reply))))
 
-  (let [reply (helper/run p/eof "test")]
+  (let [reply (helper/run p/end "test")]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
-    (is (= error/expected-eof (:error reply)))))
+    (is (= error/expected-end (:error reply)))))
 
 (deftest bind-test
   (let [reply (helper/run (p/bind (p/return 1) #(p/return [% 2])))]
@@ -169,7 +169,7 @@
   (let [reply (helper/run (p/attempt helper/any))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/attempt (p/then helper/any helper/any)) "x")]
     (is (:fail? reply))
@@ -182,7 +182,7 @@
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/?! helper/any ::default))]
     (is (:ok? reply))
@@ -211,7 +211,7 @@
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (= 1 (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/alt (c/char \x) helper/any) "test")]
     (is (:ok? reply))
@@ -298,7 +298,7 @@
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= ::error/nested (get-in reply [:error :type])))
-    (is (= error/unexpected-eof (get-in reply [:error :error]))))
+    (is (= error/unexpected-end (get-in reply [:error :error]))))
 
   (let [reply (helper/run (p/look-ahead (p/fatal "test")))]
     (is (:fail? reply))
@@ -321,7 +321,7 @@
   (let [reply (helper/run (p/as (p/then helper/any helper/any) "something") "x")]
     (is (:fail? reply))
     (is (:changed? reply))
-    (is (= error/unexpected-eof (:error reply)))))
+    (is (= error/unexpected-end (:error reply)))))
 
 (deftest as!-test
   (let [reply (helper/run (p/as! helper/any "something"))]
@@ -369,13 +369,13 @@
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/? helper/any ::default))]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (= ::default (:value reply)))
-    (is (= error/unexpected-eof (:error reply)))))
+    (is (= error/unexpected-end (:error reply)))))
 
 (deftest *-test
   (is (empty? (p/parse (p/* (c/char \a)) "bbb")))
@@ -388,7 +388,7 @@
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (empty? (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/* (c/char \a)) "ab")]
     (is (:ok? reply))
@@ -402,13 +402,13 @@
   (let [reply (helper/run (p/+ helper/any))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply)))))
+    (is (= error/unexpected-end (:error reply)))))
 
 (deftest skip*-test
   (let [reply (helper/run (p/skip* helper/any))]
     (is (:ok? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/skip* helper/any) "xxxx")]
     (is (:ok? reply))
@@ -416,13 +416,13 @@
     (is (nil? (:value reply)))
     (is (= 0 (-> reply :state pos/line-index)))
     (is (= 4 (-> reply :state pos/column-index)))
-    (is (= error/unexpected-eof (:error reply)))))
+    (is (= error/unexpected-end (:error reply)))))
 
 (deftest skip+-test
   (let [reply (helper/run (p/skip+ helper/any))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/skip+ helper/any) "xxxx")]
     (is (:ok? reply))
@@ -430,30 +430,30 @@
     (is (nil? (:value reply)))
     (is (= 0 (-> reply :state pos/line-index)))
     (is (= 4 (-> reply :state pos/column-index)))
-    (is (= error/unexpected-eof (:error reply)))))
+    (is (= error/unexpected-end (:error reply)))))
 
 (deftest min-test
   (let [reply (helper/run (p/min helper/any 2))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/min helper/any 2) "x")]
     (is (:fail? reply))
     (is (:changed? reply))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/min helper/any 2) "xx")]
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= [\x \x] (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/min helper/any 2) "abcdef")]
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= [\a \b \c \d \e \f] (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/min (c/char \x) 2) "xxxy")]
     (is (:ok? reply))
@@ -468,13 +468,13 @@
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (empty? (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/max helper/any 2) "x")]
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= [\x] (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/max helper/any 2) "xx")]
     (is (:ok? reply))
@@ -500,12 +500,12 @@
   (let [reply (helper/run (p/repeat helper/any 2))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/repeat helper/any 2) "x")]
     (is (:fail? reply))
     (is (:changed? reply))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/repeat helper/any 2) "xx")]
     (is (:ok? reply))
@@ -522,13 +522,13 @@
   (let [reply (helper/run (p/repeat helper/any 2 3) "x")]
     (is (:fail? reply))
     (is (:changed? reply))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/repeat helper/any 2 3) "xx")]
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= [\x \x] (:value reply)))
-    (is (= error/unexpected-eof (:error reply))))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/repeat (c/char \x) 2 3) "xxxyy")]
     (is (:ok? reply))
@@ -573,7 +573,7 @@
       (is (:ok? reply))
       (is (:changed? reply))
       (is (= [\y] (:value reply)))
-      (is (= #{(error/expected-input \z) error/unexpected-eof} (:messages reply))))
+      (is (= #{(error/expected-input \z) error/unexpected-end} (:messages reply))))
 
     (let [reply (helper/run p "xyy")]
       (is (:ok? reply))
@@ -619,7 +619,7 @@
     (let [reply (helper/run p "((x)")]
       (is (:fail? reply))
       (is (:changed? reply))
-      (is (= #{(error/expected-input \)) error/unexpected-eof} (:messages reply))))))
+      (is (= #{(error/expected-input \)) error/unexpected-end} (:messages reply))))))
 
 (deftest index-test
   (is (= 0 (p/parse p/index "")))

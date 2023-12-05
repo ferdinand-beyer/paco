@@ -33,7 +33,7 @@
         (if (= ch ch2)
           (reply :ok (state/skip-char state) ch nil)
           (reply :error state nil (error/merge expected (error/unexpected-input ch2))))
-        (reply :error state nil (error/merge expected error/unexpected-eof))))))
+        (reply :error state nil (error/merge expected error/unexpected-end))))))
 
 (defn bind [p f]
   (fn [state reply]

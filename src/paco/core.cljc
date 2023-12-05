@@ -47,10 +47,12 @@
   [state reply]
   (reply detail/ok state nil nil))
 
-(defn eof [state reply]
+(defn end
+  "This parser succeeds a the end of the input stream."
+  [state reply]
   (if (state/at-end? state)
     (reply detail/ok state nil nil)
-    (reply detail/error state nil error/expected-eof)))
+    (reply detail/error state nil error/expected-end)))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping

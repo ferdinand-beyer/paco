@@ -16,7 +16,7 @@
   (let [reply (helper/run chars/any-char)]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= error/unexpected-eof (:error reply)))))
+    (is (= error/unexpected-end (:error reply)))))
 
 (deftest char-test
   (let [reply (helper/run (chars/char \x) "xyz")]
@@ -33,7 +33,7 @@
   (let [reply (helper/run (chars/char \x))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= #{error/unexpected-eof (error/expected-input \x)} (:messages reply)))))
+    (is (= #{error/unexpected-end (error/expected-input \x)} (:messages reply)))))
 
 (deftest char-return-test
   (let [reply (helper/run (chars/char-return \5 5) "500")]
@@ -45,7 +45,7 @@
   (let [reply (helper/run (chars/char-return \5 5))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= #{error/unexpected-eof (error/expected-input \5)} (:messages reply))))
+    (is (= #{error/unexpected-end (error/expected-input \5)} (:messages reply))))
 
   (let [reply (helper/run (chars/char-return \5 5) "123")]
     (is (:fail? reply))
@@ -75,7 +75,7 @@
   (let [reply (helper/run (chars/match #(= \x %) "the letter X"))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= #{(error/expected "the letter X") error/unexpected-eof} (:messages reply)))))
+    (is (= #{(error/expected "the letter X") error/unexpected-end} (:messages reply)))))
 
 (deftest ascii-upper-test
   (are [ch] (chars/ascii-upper? ch) \A \B \M \Y \Z)
@@ -143,7 +143,7 @@
   (let [reply (helper/run (chars/string "foo"))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= #{error/unexpected-eof (error/expected-input "foo")} (:messages reply))))
+    (is (= #{error/unexpected-end (error/expected-input "foo")} (:messages reply))))
 
   (let [reply (helper/run (chars/string "foo") "FOO")]
     (is (:fail? reply))
@@ -157,7 +157,7 @@
   (let [reply (helper/run (chars/string-i "foo"))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
-    (is (= #{error/unexpected-eof (error/expected-input "foo")} (:messages reply))))
+    (is (= #{error/unexpected-end (error/expected-input "foo")} (:messages reply))))
 
   (let [reply (helper/run (chars/string-i "foo") "FOX")]
     (is (:fail? reply))

@@ -263,22 +263,22 @@
 
 ;; fparsec: + Other
 
-(def ^:private eof-label "end of input")
+(def ^:private end-label "end of input")
 
-(def unexpected-eof (unexpected eof-label))
-(def expected-eof (expected eof-label))
+(def unexpected-end (unexpected end-label))
+(def expected-end (expected end-label))
 
 (def no-message nil)
 
 (comment
-  (string unexpected-eof)
+  (string unexpected-end)
   (string [(expected "something better")
-           unexpected-eof])
+           unexpected-end])
   (string (merge (expected "something better")
                  (merge (unexpected-input "x")
                         (merge
                          (unexpected-input \x)
-                         unexpected-eof))))
+                         unexpected-end))))
 
 ;;
   )
