@@ -50,7 +50,7 @@
 (defn eof [state reply]
   (if (state/at-end? state)
     (reply detail/ok state nil nil)
-    (reply detail/fail state nil error/expected-eof)))
+    (reply detail/error state nil error/expected-eof)))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping
@@ -197,9 +197,9 @@
                 (reply status1 state1 value1 error1)
 
                 (not (detail/same-state? state1 state))
-                (reply detail/fail state nil (error/nested state1 error1))
+                (reply detail/error state nil (error/nested state1 error1))
 
-                (detail/fatal? status1) (reply detail/fail state1 value1 error1)
+                (detail/fatal? status1) (reply detail/error state1 value1 error1)
 
                 :else (reply status1 state1 value1 error1)))]
       (detail/thunk (p state reply1)))))
@@ -283,13 +283,13 @@
     (letfn [(reply1 [status1 state1 value1 error1]
               (reply (if (and (detail/ok? status1)
                               (detail/same-state? state1 state))
-                       detail/fail
+                       detail/error
                        status1)
                      state1 value1 error1))]
       (detail/thunk (p state reply1)))))
 
 ;; fparsec: followedBy, followedByL
-;; alternative name: follows
+;; alternative names: follows, assert-next
 (defn followed-by
   ([p]
    (followed-by p nil))
@@ -299,10 +299,11 @@
        (letfn [(reply1 [status1 _ _ _]
                  (if (detail/ok? status1)
                    (reply detail/ok state nil nil)
-                   (reply detail/fail state nil error)))]
+                   (reply detail/error state nil error)))]
          (detail/thunk (p state reply1)))))))
 
 ;; fparsec: notFollowedBy, notFollowedByL
+;; alternative names: assert-not-next
 (defn not-followed-by
   ([p]
    (not-followed-by p nil))
@@ -311,13 +312,20 @@
      (fn [state reply]
        (letfn [(reply1 [status1 _ _ _]
                  (if (detail/ok? status1)
-                   (reply detail/fail state nil error)
+                   (reply detail/error state nil error)
                    (reply detail/ok state nil nil)))]
          (detail/thunk (p state reply1)))))))
 
 ;; fparsec: lookAhead
-
 ;; names: ?=, ?!, ?<=, ?<!
+(defn look-ahead
+  [p]
+  (fn [state reply]
+    (letfn [(reply1 [status1 state1 value1 error1]
+              (if (detail/ok? status1)
+                (reply detail/ok state value1 nil)
+                (reply detail/error state nil (error/nested state1 error1))))]
+      (detail/thunk (p state reply1)))))
 
 ;;---------------------------------------------------------
 ;; Customizing error messages
@@ -325,7 +333,12 @@
 (defn fail [message]
   (core/let [error (error/message message)]
     (fn [state reply]
-      (reply detail/fail state nil error))))
+      (reply detail/error state nil error))))
+
+(defn fatal [message]
+  (core/let [error (error/message message)]
+    (fn [state reply]
+      (reply detail/fatal state nil error))))
 
 ;; fparsec: <?>
 (defn as
@@ -480,7 +493,7 @@
   (fn [state reply]
     (if-let [ret (pred (state/user-state state))]
       (reply detail/ok state ret nil)
-      (reply detail/fail state nil error/no-message))))
+      (reply detail/error state nil error/no-message))))
 
 (comment
   ;; Idea: Coerce values to parser functions

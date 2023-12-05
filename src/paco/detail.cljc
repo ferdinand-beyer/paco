@@ -4,7 +4,7 @@
   #?(:cljs (:require-macros [paco.detail :refer [same-state? thunk]])))
 
 (def ^:const ok ::ok)
-(def ^:const fail ::fail)
+(def ^:const error ::error)
 (def ^:const fatal ::fatal)
 
 (defn ok? [status]
@@ -12,6 +12,9 @@
 
 (defn fail? [status]
   (not (#?(:clj identical?, :cljs keyword-identical?) ok status)))
+
+(defn error? [status]
+  (#?(:clj identical?, :cljs keyword-identical?) error status))
 
 (defn fatal? [status]
   (#?(:clj identical?, :cljs keyword-identical?) fatal status))
@@ -128,7 +131,7 @@
                                        (error/merge error1 error2)
                                        error2)]
                            (if (< n min)
-                             (reply fail state2 nil error)
+                             (reply error state2 nil error)
                              (reply ok state2 (rf acc) error)))))]
                (thunk (p state1 step-reply))))]
      (if (and max (zero? max))

@@ -291,6 +291,22 @@
     (is (not (:changed? reply)))
     (is (= (error/unexpected "'x' comes next") (:error reply)))))
 
+(deftest look-ahead-test
+  (is (= \a (p/parse (p/look-ahead helper/any) "abc")))
+
+  (let [reply (helper/run (p/look-ahead helper/any))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= ::error/nested (get-in reply [:error :type])))
+    (is (= error/unexpected-eof (get-in reply [:error :error]))))
+
+  (let [reply (helper/run (p/look-ahead (p/fatal "test")))]
+    (is (:fail? reply))
+    (is (detail/error? (:status reply)))
+    (is (not (:changed? reply)))
+    (is (= ::error/nested (get-in reply [:error :type])))
+    (is (= (error/message "test") (get-in reply [:error :error])))))
+
 (deftest as-test
   (let [reply (helper/run (p/as helper/any "something"))]
     (is (:fail? reply))
@@ -320,7 +336,7 @@
 
   (testing "reports compound error"
     (let [reply (helper/run (p/as! (p/then helper/any helper/any) "something") "x")]
-      (is (= ::detail/fatal (:status reply)))
+      (is (detail/fatal? (:status reply)))
       (is (not (:changed? reply)))
       (is (= ::error/compound (get-in reply [:error :type])))
       (is (= "something" (get-in reply [:error :label]))))
@@ -329,7 +345,7 @@
                                 (p/as! "two chars")
                                 p/attempt)
                             "x")]
-      (is (= ::detail/fail (:status reply)))
+      (is (= ::detail/error (:status reply)))
       (is (= ::error/compound (get-in reply [:error :type])))
       (is (= ::error/unexpected (get-in reply [:error :error :type]))))))
 

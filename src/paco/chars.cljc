@@ -84,8 +84,8 @@
     (if-let [ch (state/peek state)]
       (if (pred ch)
         (reply detail/ok (skip state) ch nil)
-        (reply detail/fail state nil (error (error/unexpected-input ch))))
-      (reply detail/fail state nil (error error/unexpected-eof)))))
+        (reply detail/error state nil (error (error/unexpected-input ch))))
+      (reply detail/error state nil (error error/unexpected-eof)))))
 
 ;; fparsec: satisfy; normalises newlines
 (defn match
@@ -105,8 +105,8 @@
       (if-let [next-ch (state/peek state)]
         (if (= ch next-ch)
           (reply detail/ok (state/skip-char state) value nil)
-          (reply detail/fail state nil (error/merge (error/unexpected-input next-ch) error)))
-        (reply detail/fail state nil (error/merge error/unexpected-eof error))))))
+          (reply detail/error state nil (error/merge (error/unexpected-input next-ch) error)))
+        (reply detail/error state nil (error/merge error/unexpected-eof error))))))
 
 ;; fparsec: pchar
 (defn char [ch]
@@ -120,7 +120,7 @@
   (fn [state reply]
     (if-let [ch (state/peek state)]
       (reply detail/ok (state/skip-char state) ch nil)
-      (reply detail/fail state nil error/unexpected-eof))))
+      (reply detail/error state nil error/unexpected-eof))))
 
 ;; fparsec: + skip variants
 (defn any-of [chars]
@@ -183,7 +183,7 @@
     (fn [state reply]
       (if (state/matches-str? state s)
         (reply detail/ok (state/skip state length) s nil)
-        (reply detail/fail state nil (if (state/at-end? state)
+        (reply detail/error state nil (if (state/at-end? state)
                                        error-eof
                                        error))))))
 
@@ -199,7 +199,7 @@
       (if (state/matches-str-i? state s)
         (reply detail/ok (state/skip state length)
                (state/peek-str state length) nil)
-        (reply detail/fail state nil (if (state/at-end? state)
+        (reply detail/error state nil (if (state/at-end? state)
                                        error-eof
                                        error))))))
 
