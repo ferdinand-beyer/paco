@@ -32,20 +32,20 @@
 
 ;; TODO: c/many-string
 (def string
-  (-> (p/* (p/alt (p/>> (c/skip-char \\)
-                        (p/alt (c/any-of "\"\\/")
-                               (c/char-return \b \backspace)
-                               (c/char-return \f \formfeed)
-                               (c/char-return \n \newline)
-                               (c/char-return \r \return)
-                               (c/char-return \t \tab)
-                               (p/>> (c/skip-char \u)
-                                     (p/pipe
-                                      (p/repeat c/hex 4)
-                                      (fn [chs]
-                                        (-> (str/join chs)
-                                            (parse-int 16)
-                                            char))))))
+  (-> (p/* (p/alt (p/then (c/skip-char \\)
+                          (p/alt (c/any-of "\"\\/")
+                                 (c/char-return \b \backspace)
+                                 (c/char-return \f \formfeed)
+                                 (c/char-return \n \newline)
+                                 (c/char-return \r \return)
+                                 (c/char-return \t \tab)
+                                 (p/then (c/skip-char \u)
+                                         (p/pipe
+                                          (p/repeat c/hex 4)
+                                          (fn [chs]
+                                            (-> (str/join chs)
+                                                (parse-int 16)
+                                                char))))))
                   (c/match #(not (or (#{\" \\} %)
                                      (c/control? %))))))
       (p/pipe str/join)
@@ -65,7 +65,7 @@
 ;; TODO: p/sep-by
 (defn comma-sep [p]
   (p/? (p/with [x p
-                xs (p/* (p/>> skip-comma p))]
+                xs (p/* (p/then skip-comma p))]
          (p/return (cons x xs)))))
 
 (def array

@@ -13,9 +13,9 @@
                      (zipmap args [:a :b :c :d :e :f :g])))
            "12345678")
 
-  (p/parse (p/>> (c/string "Just")
-                 (c/char \space)
-                 (c/string "do"))
+  (p/parse (p/then (c/string "Just")
+                   (c/char \space)
+                   (c/string "do"))
            "Just do")
 
   (p/parse (p/cat (c/char \f)

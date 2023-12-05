@@ -30,8 +30,7 @@
 
 ;;---------------------------------------------------------
 
-;; fparsec: preturn
-;; fparsec also has >>%: parse p, but return x
+;; fparsec: preturn, >>%
 (defn return
   ([x]
    (fn [state reply]
@@ -81,7 +80,7 @@
       `(bind ~p (fn [~binding] ~(emit-with (drop 2 bindings) body))))))
 
 ;; TODO: Rename to `let`?
-;; alternative names: let-then, let-chain, let->>, >>let, let-seq, plet
+;; alternative names: let-then, let-chain, let-seq, plet
 (defmacro with
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
@@ -143,10 +142,10 @@
          f  (last more)]
      (detail/reduce-sequence (completing conj #(apply f %)) ps))))
 
-;; alternative names: g, group', groups, pseq, tuples
+;; alternative names: pseq, sq, tup (tuple), grp (group), group-all
 (defn sequence
-  "The parser `(series ps)` applies the parsers `ps` in sequence
-   and returns a collection of their return values."
+  "Applies the parsers `ps` in sequence and returns a collection of
+   their return values."
   [ps]
   (detail/reduce-sequence detail/vector-rf ps))
 
@@ -163,13 +162,17 @@
 
 ;; fparsec: >>.
 ;; parsesso: after
-;; Would be cool to call this `do`, but this fails for (do)
-;; since it is a special form (paco.core/do) ;=> nil
-;; alternative names: then, pdo
-(defn >> [& ps]
-  (detail/reduce-sequence detail/last-rf ps))
+(defn then
+  "Applies the parsers in sequence and returns the result of the last one."
+  [p & ps]
+  (detail/reduce-sequence detail/last-rf (cons p ps)))
 
-;; fparsec: .>> - return the first result
+;; fparsec: .>>
+(defn then-skip
+  "Applies the parsers in sequence and returns the result of the first one."
+  [p & ps]
+  (detail/reduce-sequence detail/first-rf (cons p ps)))
+
 ;; fparsetc: .>>.: like (cat p1 p2)
 
 (defn between
@@ -272,6 +275,7 @@
 ;;---------------------------------------------------------
 ;; Conditional parsing and looking ahead
 
+;; ? Pass `label`?
 (defn not-empty
   "Like `p`, but fails when `p` does not change the parser state."
   [p]
@@ -284,7 +288,33 @@
                      state1 value1 error1))]
       (detail/thunk (p state reply1)))))
 
-;; fparsec: followedBy, followedByL, notFollowedBy, notFollowedByL
+;; fparsec: followedBy, followedByL
+;; alternative name: follows
+(defn followed-by
+  ([p]
+   (followed-by p nil))
+  ([p label]
+   (let [error (some-> label error/expected)]
+     (fn [state reply]
+       (letfn [(reply1 [status1 _ _ _]
+                 (if (detail/ok? status1)
+                   (reply detail/ok state nil nil)
+                   (reply detail/fail state nil error)))]
+         (detail/thunk (p state reply1)))))))
+
+;; fparsec: notFollowedBy, notFollowedByL
+(defn not-followed-by
+  ([p]
+   (not-followed-by p nil))
+  ([p label]
+   (let [error (some-> label error/unexpected)]
+     (fn [state reply]
+       (letfn [(reply1 [status1 _ _ _]
+                 (if (detail/ok? status1)
+                   (reply detail/fail state nil error)
+                   (reply detail/ok state nil nil)))]
+         (detail/thunk (p state reply1)))))))
+
 ;; fparsec: lookAhead
 
 ;; names: ?=, ?!, ?<=, ?<!

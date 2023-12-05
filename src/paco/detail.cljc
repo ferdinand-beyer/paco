@@ -36,12 +36,9 @@
 ;;---------------------------------------------------------
 ;; Reducing functions
 
-(defn ignore
+(def ignore
   "Ignores all args and returns `nil`.  Useful for skip parsers."
-  ([] nil)
-  ([_] nil)
-  ([_ _] nil)
-  ([_ _ _ & _] nil))
+  (constantly nil))
 
 (defn vector-rf
   "Reducing function that collects input in a vector.
@@ -55,6 +52,14 @@
   ([] nil)
   ([result] result)
   ([_ input] input))
+
+(defn first-rf
+  "Reducing function that only keeps the first input."
+  ([] nil)
+  ([result] (first result))
+  ([result input] (if (nil? result)
+                    (list input)
+                    result)))
 
 (def ^:private ^:const seqexp-tag ::seqexp)
 (def ^:private ^:const seqexp-meta {seqexp-tag true})
@@ -76,7 +81,6 @@
 ;;---------------------------------------------------------
 ;; Advanced parsers
 
-;; alternate names: >>reduce, preduce, reduce-seq
 (defn reduce-sequence
   "Creates a parser that runs `ps` in sequence, reducing their return
    values with the reducing function `rf`."

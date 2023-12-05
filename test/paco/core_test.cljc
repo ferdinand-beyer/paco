@@ -149,8 +149,13 @@
 (deftest group-test
   (is (= [\a \b \c] (p/parse (p/group helper/any helper/any helper/any) "abcdef"))))
 
-(deftest >>-test
-  (is (= \c (p/parse (p/>> helper/any helper/any helper/any) "abcdef"))))
+(deftest then-test
+  (is (= \a (p/parse (p/then helper/any) "abcdef")))
+  (is (= \c (p/parse (p/then helper/any helper/any helper/any) "abcdef"))))
+
+(deftest then-skip-test
+  (is (= \a (p/parse (p/then-skip helper/any) "abcdef")))
+  (is (= \a (p/parse (p/then-skip helper/any helper/any helper/any) "abcdef"))))
 
 (deftest between-test
   (is (= \x (p/parse (-> helper/any (p/between (c/char \() (c/char \)))) "(x)"))))
@@ -166,7 +171,7 @@
     (is (not (:changed? reply)))
     (is (= error/unexpected-eof (:error reply))))
 
-  (let [reply (helper/run (p/attempt (p/>> helper/any helper/any)) "x")]
+  (let [reply (helper/run (p/attempt (p/then helper/any helper/any)) "x")]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= ::error/nested (get-in reply [:error :type])))
@@ -184,12 +189,12 @@
     (is (not (:changed? reply)))
     (is (= ::default (:value reply))))
 
-  (let [reply (helper/run (p/?! (p/>> helper/any helper/any)) "x")]
+  (let [reply (helper/run (p/?! (p/then helper/any helper/any)) "x")]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (= ::error/nested (get-in reply [:error :type]))))
 
-  (let [reply (helper/run (p/?! (p/>> helper/any helper/any) ::default) "x")]
+  (let [reply (helper/run (p/?! (p/then helper/any helper/any) ::default) "x")]
     (is (:ok? reply))
     (is (= ::default (:value reply)))))
 
@@ -240,6 +245,52 @@
     (is (:fail? reply))
     (is (nil? (:error reply)))))
 
+(deftest followed-by-test
+  (let [reply (helper/run (p/followed-by helper/any) "abc")]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/followed-by (c/char \x)) "abc")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/followed-by helper/any))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/followed-by (c/char \x) "'x' comes next") "abc")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= (error/expected "'x' comes next") (:error reply)))))
+
+(deftest not-followed-by-test
+  (let [reply (helper/run (p/not-followed-by helper/any) "abc")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/not-followed-by (c/char \x)) "abc")]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/not-followed-by helper/any))]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (nil? (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (p/not-followed-by (c/char \x) "'x' comes next") "xyz")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= (error/unexpected "'x' comes next") (:error reply)))))
+
 (deftest as-test
   (let [reply (helper/run (p/as helper/any "something"))]
     (is (:fail? reply))
@@ -251,7 +302,7 @@
     (is (= \t (:value reply)))
     (is (nil? (:error reply))))
 
-  (let [reply (helper/run (p/as (p/>> helper/any helper/any) "something") "x")]
+  (let [reply (helper/run (p/as (p/then helper/any helper/any) "something") "x")]
     (is (:fail? reply))
     (is (:changed? reply))
     (is (= error/unexpected-eof (:error reply)))))
@@ -268,13 +319,13 @@
     (is (nil? (:error reply))))
 
   (testing "reports compound error"
-    (let [reply (helper/run (p/as! (p/>> helper/any helper/any) "something") "x")]
+    (let [reply (helper/run (p/as! (p/then helper/any helper/any) "something") "x")]
       (is (= ::detail/fatal (:status reply)))
       (is (not (:changed? reply)))
       (is (= ::error/compound (get-in reply [:error :type])))
       (is (= "something" (get-in reply [:error :label]))))
 
-    (let [reply (helper/run (-> (p/>> helper/any helper/any)
+    (let [reply (helper/run (-> (p/then helper/any helper/any)
                                 (p/as! "two chars")
                                 p/attempt)
                             "x")]
@@ -556,28 +607,28 @@
 
 (deftest index-test
   (is (= 0 (p/parse p/index "")))
-  (is (= 3 (p/parse (p/>> (p/repeat helper/any 3) p/index) "abcdef"))))
+  (is (= 3 (p/parse (p/then (p/repeat helper/any 3) p/index) "abcdef"))))
 
 (deftest pos-test
   (is (= (pos/pos 0 0) (p/parse p/pos "")))
-  (is (= (pos/pos 1 2) (p/parse (p/>> (p/repeat c/any-char 6) p/pos) "abc\ndef"))))
+  (is (= (pos/pos 1 2) (p/parse (p/then (p/repeat c/any-char 6) p/pos) "abc\ndef"))))
 
 (deftest user-state-test
-  (let [p (p/>> (p/set-user-state {})
-                (p/* (p/bind helper/any #(p/swap-user-state update % (fnil inc 0))))
-                p/user-state)]
+  (let [p (p/then (p/set-user-state {})
+                  (p/* (p/bind helper/any #(p/swap-user-state update % (fnil inc 0))))
+                  p/user-state)]
     (is (= {\m 1, \i 4, \s 4, \p 2} (p/parse p "mississippi"))))
 
-  (let [reply (helper/run (p/>> (p/set-user-state 2)
-                                (p/match-user-state even?)))]
+  (let [reply (helper/run (p/then (p/set-user-state 2)
+                                  (p/match-user-state even?)))]
     (is (:ok? reply))
     (is (true? (:value reply))))
 
-  (let [reply (helper/run (p/>> (p/set-user-state 1)
-                                (p/match-user-state even?)))]
+  (let [reply (helper/run (p/then (p/set-user-state 1)
+                                  (p/match-user-state even?)))]
     (is (:fail? reply))
     (is (nil? (:error reply))))
 
-  (is (= \x (p/parse (p/>> (p/bind helper/any #(p/set-user-state %))
-                           (p/match-user-state #{\x}))
+  (is (= \x (p/parse (p/then (p/bind helper/any #(p/set-user-state %))
+                             (p/match-user-state #{\x}))
                      "xyz"))))
