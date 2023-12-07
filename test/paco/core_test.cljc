@@ -585,6 +585,25 @@
       (is (:ok? reply))
       (is (= [\y] (:value reply))))))
 
+(deftest sep-by-test
+  (is (empty? (p/parse (p/sep-by* helper/any (c/char \,)) "")))
+  (is (= [\a \b \c \d] (p/parse (p/sep-by* helper/any (c/char \,)) "a,b,c,d")))
+  (is (= [\a \b \c \d] (p/parse (p/sep-by+ helper/any (c/char \,)) "a,b,c,d")))
+
+  (let [reply (helper/run (p/sep-by* (c/char \x) (p/return ::sep)) "x")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= #{(error/expected-input \x) error/unexpected-end} (:messages reply))))
+
+  (let [reply (helper/run (p/sep-by* (p/fatal "p") (p/fatal "sep")))]
+    (is (detail/fatal? (:status reply))))
+
+  (let [reply (helper/run (p/sep-by* helper/any (p/fatal "sep")) "abc")]
+    (is (detail/fatal? (:status reply))))
+
+  (let [reply (helper/run (p/sep-by* (p/fatal "p") helper/any) "abc")]
+    (is (detail/fatal? (:status reply)))))
+
 (deftest lazy-test
   (let [a (atom 0)
         p (p/lazy (p/return @a))]

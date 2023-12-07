@@ -127,18 +127,51 @@
                              (if (or (nil? max) (< n max))
                                (step reply acc n state2 error2)
                                (reply ok state2 (rf acc) error2))))
-                         (let [error (if (and error1 (identical? state1 state2))
+                         (let [err (if (and error1 (same-state? state1 state2))
                                        (error/merge error1 error2)
                                        error2)]
                            (if (< n min)
-                             (reply error state2 nil error)
-                             (reply ok state2 (rf acc) error)))))]
+                             (reply error state2 nil err)
+                             (reply ok state2 (rf acc) err)))))]
                (thunk (p state1 step-reply))))]
      (if (and max (zero? max))
        (fn [state reply]
          (reply ok state (rf (rf)) nil))
        (fn [state reply]
          (step reply (rf) 0 state nil))))))
+
+(defn reduce-sep
+  [sym p sep rf empty-ok? sep-end-ok?]
+  (letfn [(step [reply acc state0 error0]
+            (letfn [(reply1 [status1 state1 _ error1]
+                      (if (ok? status1)
+                        (letfn [(reply2 [status2 state2 value2 error2]
+                                  (if (ok? status2)
+                                    (if (same-state? state2 state0)
+                                      (throw (infinite-loop-exception sym p state2))
+                                      (step reply (rf acc value2) state2 (pass-error state2 error2 state1 error1)))
+                                    (if (and sep-end-ok? (error? status2) (same-state? state2 state1))
+                                      (reply ok state2 (rf acc) (error/merge error2 (pass-error state1 error1 state0 error0)))
+                                      (reply status2 state2 nil (if (same-state? state2 state1)
+                                                                  (error/merge error2
+                                                                               (if (same-state? state1 state0)
+                                                                                 (error/merge error1 error0)
+                                                                                 error1))
+                                                                  error2)))))]
+                          (thunk (p state1 reply2)))
+                        (if (fatal? status1)
+                          (reply fatal state1 nil (pass-error state1 error1 state0 error0))
+                          (reply ok state1 (rf acc) (pass-error state1 error1 state0 error0)))))]
+              (thunk (sep state0 reply1))))]
+    (fn [state reply]
+      (let [acc (rf)
+            reply1 (fn [status1 state1 value1 error1]
+                     (if (ok? status1)
+                       (step reply (rf acc value1) state1 error1)
+                       (if (and empty-ok? (error? status1) (same-state? state1 state))
+                         (reply ok state1 (rf acc) error1)
+                         (reply status1 state1 value1 error1))))]
+        (thunk (p state reply1))))))
 
 (defn pforce
   "Forces a possibly delayed parser `dp`.  Implementation detail of

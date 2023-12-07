@@ -428,7 +428,31 @@
 (defn max [p n]
   (detail/reduce-repeat `max p detail/seqexp-rf 0 n))
 
-;; fparsec: sepBy, sepEndBy, manyTill + variants
+(defn sep-by* [p sep]
+  (detail/reduce-sep `sep-by* p sep detail/vector-rf true false))
+
+(defn sep-by+ [p sep]
+  (detail/reduce-sep `sep-by+ p sep detail/vector-rf false false))
+
+(defn skip-sep-by* [p sep]
+  (detail/reduce-sep `skip-sep-by* p sep detail/ignore true false))
+
+(defn skip-sep-by+ [p sep]
+  (detail/reduce-sep `skip-sep-by+ p sep detail/ignore false false))
+
+(defn sep-end-by* [p sep]
+  (detail/reduce-sep `sep-end-by* p sep detail/vector-rf true true))
+
+(defn sep-end-by+ [p sep]
+  (detail/reduce-sep `sep-end-by+ p sep detail/vector-rf false true))
+
+(defn skip-sep-end-by* [p sep]
+  (detail/reduce-sep `skip-sep-end-by* p sep detail/ignore true true))
+
+(defn skip-sep-end-by+ [p sep]
+  (detail/reduce-sep `skip-sep-end-by+ p sep detail/ignore false true))
+
+;; fparsec: manyTill + variants
 ;; fparsec: chainl, chainr, + variants
 
 ;;---------------------------------------------------------
