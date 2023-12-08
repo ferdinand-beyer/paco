@@ -366,6 +366,7 @@
                        :else
                        ;; Backtracked -- reply fatal failure to make sure
                        ;; normal parsing doesn't continue.
+                       ;; TODO: Is it worth having a fatal error status just for this use case?
                        (reply :fatal state nil (error/compound label state1 error1))))))))
 
 ;;---------------------------------------------------------

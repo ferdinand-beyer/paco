@@ -15,8 +15,7 @@
   (p/with [integer (p/cat
                     (p/? (c/char \-))
                     (p/alt (c/char \0)
-                           (p/cat (c/any-of "123456789")
-                                  (p/* c/digit))))
+                           (p/cat (c/char-range \1 \9) (p/* c/digit))))
            fraction (p/? (p/cat (c/char \.) (p/+ c/digit)))
            exponent (p/? (p/cat (c/any-of "Ee")
                                 (p/? (c/any-of "-+"))

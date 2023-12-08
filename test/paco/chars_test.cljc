@@ -3,7 +3,8 @@
             [paco.chars :as chars]
             [paco.core :as p]
             [paco.error :as error]
-            [paco.helper :as helper])
+            [paco.helper :as helper]
+            [paco.pos :as pos])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (deftest any-char-test
@@ -69,6 +70,13 @@
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= #{(error/unexpected-input \z)} (:messages reply)))))
+
+(deftest char-range-test
+  (is (= \6 (p/parse (chars/char-range \1 \9) "666")))
+  (let [reply (helper/run (chars/char-range \1 \9 "1-9") "08/15")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= #{(error/unexpected-input \0) (error/expected "1-9")} (:messages reply)))))
 
 (deftest match-test
   (is (= \x (p/parse (chars/match #(= \x %)) "xyz")))
@@ -166,3 +174,8 @@
 
 (deftest string-return-test
   (is (= ::ok (p/parse (chars/string-return "ok" ::ok) "okay"))))
+
+(deftest skipped-test
+  (is (= "abc" (p/parse (chars/skipped (p/* chars/any-char)) "abc")))
+  (let [reply (helper/run (chars/skipped (p/* chars/any-char)) "one\ntwo\n")]
+    (is (= 2 (pos/line-index (:state reply))))))

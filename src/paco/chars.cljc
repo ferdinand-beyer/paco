@@ -132,6 +132,14 @@
   ;; TODO: (expected "any char not in ...")
   (match-char (complement (set chars)) state/skip-char identity))
 
+(defn char-range
+  ([min-ch max-ch]
+   (char-range min-ch max-ch nil))
+  ([min-ch max-ch label]
+   (let [min-cp (code-point min-ch)
+         max-cp (code-point max-ch)]
+     (match #(<= min-cp (code-point %) max-cp) label))))
+
 (def ascii-upper
   (match ascii-upper? "ASCII upper-case letter"))
 
@@ -221,5 +229,14 @@
 
 ;; fparsec: combine parsers to return strings
 ;;   manyChars, manyStrings, skipped
+
+(defn skipped [p]
+  (fn [state reply]
+    (let [index0 (state/index state)]
+      (detail/call p state (fn [status1 state1 value1 error1]
+                             (if (detail/ok? status1)
+                               (let [n (- (state/index state1) index0)]
+                                 (reply :ok state1 (state/peek-str state n) error1))
+                               (reply status1 state1 value1 error1)))))))
 
 ;; fparsec: number parsers (int, float)

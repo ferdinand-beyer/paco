@@ -152,8 +152,7 @@
        (write! writer " at line ")
        (write! writer (inc (pos/line-index pos)))
        (write! writer ", column ")
-       (write! writer (inc (pos/column-index pos)))
-       (write! writer pos)))))
+       (write! writer (inc (pos/column-index pos)))))))
 
 (defn string
   "Returns a string representation of `error`."
