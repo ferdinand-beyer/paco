@@ -304,8 +304,8 @@
 ;; ## The `alt` combinator ##
 
 (bench-paco (p/alt (p/fail "a")
-                       (p/fail "b")
-                       (p/return :x)) "")
+                   (p/fail "b")
+                   (p/return :x)) "")
 ;             Execution time mean : 141,159754 ns
 ;    Execution time std-deviation : 4,565528 ns
 ;   Execution time lower quantile : 137,215126 ns ( 2,5%)
@@ -382,20 +382,28 @@
 
 ;;,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 
+(bench-paco (p/then (c/string "<!--")
+                    (p/till* c/any-char (c/string "-->")))
+            "<!-- comment -->")
+;           Execution time mean : 690,594495 ns
+;  Execution time std-deviation : 91,717260 ns
+; Execution time lower quantile : 614,031041 ns ( 2,5%)
+; Execution time upper quantile : 801,925929 ns (97,5%)
+
 (bench-parsesso (q/after (q/word "<!--")
                          (q/*many-till q/any-token (q/maybe (q/word "-->"))))
                 "<!-- comment -->")
-;             Execution time mean : 7,450434 µs
-;    Execution time std-deviation : 607,080144 ns
-;   Execution time lower quantile : 6,900613 µs ( 2,5%)
-;   Execution time upper quantile : 8,221736 µs (97,5%)
+;           Execution time mean : 2,415467 µs
+;  Execution time std-deviation : 266,422372 ns
+; Execution time lower quantile : 2,187431 µs ( 2,5%)
+; Execution time upper quantile : 2,750148 µs (97,5%)
 
 (bench-kern (k/>> (k/token* "<!--")
                   (k/many-till k/any-char (k/<:> (k/token* "-->"))))
             "<!-- comment -->")
-;             Execution time mean : 84,653453 µs
-;    Execution time std-deviation : 2,870985 µs
-;   Execution time lower quantile : 81,222728 µs ( 2,5%)
-;   Execution time upper quantile : 87,938498 µs (97,5%)
+;           Execution time mean : 26,333341 µs
+;  Execution time std-deviation : 2,771586 µs
+; Execution time lower quantile : 23,153392 µs ( 2,5%)
+; Execution time upper quantile : 29,817934 µs (97,5%)
 
 ;;,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

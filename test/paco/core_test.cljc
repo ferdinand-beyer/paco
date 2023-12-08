@@ -609,6 +609,23 @@
   (let [reply (helper/run (p/sep-by* (p/fatal "p") helper/any) "abc")]
     (is (detail/fatal? (:status reply)))))
 
+(deftest till*-test
+  (is (empty? (p/parse (p/till* helper/any (c/char \.)) ".")))
+  (is (= [\f \o \o \b \a \r] (p/parse (p/till* helper/any (c/char \.)) "foobar.")))
+
+  (let [reply (helper/run (p/till* helper/any (c/char \.)))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= #{(error/expected-input \.) error/unexpected-end} (:messages reply)))))
+
+(deftest till+-test
+  (is (= [\f \o \o \b \a \r] (p/parse (p/till+ helper/any (c/char \.)) "foobar.")))
+
+  (let [reply (helper/run (p/till+ helper/any (c/char \.)) ".")]
+    (is (:fail? reply))
+    (is (:changed? reply))
+    (is (= #{(error/expected-input \.) error/unexpected-end} (:messages reply)))))
+
 (deftest lazy-test
   (let [a (atom 0)
         p (p/lazy (p/return @a))]

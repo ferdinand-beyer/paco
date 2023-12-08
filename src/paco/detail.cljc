@@ -18,13 +18,17 @@
 (defmacro same-state? [state other]
   `(identical? ~state ~other))
 
-(defn pass-error
-  "When `state` has changed from `prev-state`, returns the union of
-   `error` and `prev-error`.  Otherwise, returns `error`."
-  [state error prev-state prev-error]
-  (if (same-state? state prev-state)
-    error
-    (error/merge prev-error error)))
+(defn merge-errors
+  ([e1 s1 e0 s0]
+   (if (same-state? s1 s0)
+     (error/merge e1 e0)
+     e1))
+  ([e2 s2 e1 s1 e0 s0]
+   (if (same-state? s2 s1)
+     (error/merge e2 (if (same-state? s1 s0)
+                       (error/merge e1 e0)
+                       e1))
+     e2)))
 
 (defmacro thunk [& body]
   `(fn [] ~@body))
@@ -91,8 +95,8 @@
             (fn [reply state acc error]
               (call p state (fn [status state1 value error1]
                               (if (ok? status)
-                                (step reply state1 (rf acc value) (pass-error state1 error1 state error))
-                                (reply status state1 value (pass-error state1 error1 state error)))))))
+                                (step reply state1 (rf acc value) (merge-errors error1 state1 error state))
+                                (reply status state1 value (merge-errors error1 state1 error state)))))))
           (complete [reply state acc error]
             (reply :ok state (rf acc) error))
           (compile [ps]
@@ -148,18 +152,13 @@
                               (if (ok? status2)
                                 (if (same-state? state2 state0)
                                   (throw (infinite-loop-exception sym p state2))
-                                  (step reply (rf acc value2) state2 (pass-error state2 error2 state1 error1)))
+                                  (step reply (rf acc value2) state2 (merge-errors error2 state2 error1 state1)))
                                 (if (and sep-end-ok? (error? status2) (same-state? state2 state1))
-                                  (reply :ok state2 (rf acc) (error/merge error2 (pass-error state1 error1 state0 error0)))
-                                  (reply status2 state2 nil (if (same-state? state2 state1)
-                                                              (error/merge error2
-                                                                           (if (same-state? state1 state0)
-                                                                             (error/merge error1 error0)
-                                                                             error1))
-                                                              error2))))))
+                                  (reply :ok state2 (rf acc) (error/merge error2 (merge-errors error1 state1 error0 state0)))
+                                  (reply status2 state2 nil (merge-errors error2 state2 error1 state1 error0 state0))))))
                       (if (fatal? status1)
-                        (reply :fatal state1 nil (pass-error state1 error1 state0 error0))
-                        (reply :ok state1 (rf acc) (pass-error state1 error1 state0 error0)))))))]
+                        (reply :fatal state1 nil (merge-errors error1 state1 error0 state0))
+                        (reply :ok state1 (rf acc) (merge-errors error1 state1 error0 state0)))))))]
     (fn [state reply]
       (let [acc (rf)]
         (call p state (fn [status1 state1 value1 error1]
@@ -168,6 +167,37 @@
                           (if (and empty-ok? (error? status1) (same-state? state1 state))
                             (reply :ok state1 (rf acc) error1)
                             (reply status1 state1 value1 error1)))))))))
+
+(defn reduce-till
+  [sym p endp rf empty-ok? include-end?]
+  (letfn [(step [reply acc state0 error0]
+            (call endp state0
+                  (fn [end-status end-state end-value end-error]
+                    (if (and (error? end-status) (same-state? end-state state0))
+                      (call p state0
+                            (fn [status1 state1 value1 error1]
+                              (if (ok? status1)
+                                (if (same-state? state1 state0)
+                                  (throw (infinite-loop-exception sym p state1))
+                                  (step reply (rf acc value1) state1 error1))
+                                (reply status1 state1 value1 (if (same-state? state1 state0)
+                                                               (error/merge error1 (error/merge end-error error0))
+                                                               error1)))))
+                      (if (ok? end-status)
+                        (reply :ok end-state
+                               (rf (if include-end? (rf acc end-value) acc))
+                               (merge-errors end-error end-state error0 state0))
+                        (reply end-status end-state nil (merge-errors end-error end-state error0 state0)))))))]
+    (if empty-ok?
+      (fn [state reply]
+        (step reply (rf) state nil))
+      (fn [state reply]
+        (call p state (fn [status1 state1 value1 error1]
+                        (if (ok? status1)
+                          (if (same-state? state1 state)
+                            (throw (infinite-loop-exception sym p state1))
+                            (step reply (rf (rf) value1) state1 error1))
+                          (reply status1 state1 value1 error1))))))))
 
 (defn pforce
   "Forces a possibly delayed parser `dp`.  Implementation detail of

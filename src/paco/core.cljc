@@ -102,7 +102,7 @@
     `(detail/call ~(first ps) ~prev-state
                   (fn [~status ~state ~value ~error]
                     (let [~e ~(if prev-error
-                                `(detail/pass-error ~state ~error ~prev-state ~prev-error)
+                                `(detail/merge-errors ~error ~state ~prev-error ~prev-state)
                                 error)]
                       ~(if next-ps
                          (list `if (list `detail/ok? status)
@@ -444,6 +444,13 @@
   (detail/reduce-sep `skip-sep-end-by+ p sep detail/ignore false true))
 
 ;; fparsec: manyTill + variants
+
+(defn till* [p endp]
+  (detail/reduce-till `till* p endp detail/vector-rf true false))
+
+(defn till+ [p endp]
+  (detail/reduce-till `till+ p endp detail/vector-rf false false))
+
 ;; fparsec: chainl, chainr, + variants
 
 ;;---------------------------------------------------------
