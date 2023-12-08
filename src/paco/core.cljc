@@ -34,7 +34,7 @@
 (defn return
   ([x]
    (fn [state reply]
-     (reply detail/ok state x nil)))
+     (reply :ok state x nil)))
   ([p x]
    (fn [state reply]
      (letfn [(reply1 [status state _value error]
@@ -45,14 +45,14 @@
 (defn pnil
   "This parser always succeeds and returns `nil`."
   [state reply]
-  (reply detail/ok state nil nil))
+  (reply :ok state nil nil))
 
 (defn end
   "This parser succeeds a the end of the input stream."
   [state reply]
   (if (state/at-end? state)
-    (reply detail/ok state nil nil)
-    (reply detail/error state nil error/expected-end)))
+    (reply :ok state nil nil)
+    (reply :error state nil error/expected-end)))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping
@@ -201,9 +201,9 @@
                 (reply status1 state1 value1 error1)
 
                 (not (detail/same-state? state1 state))
-                (reply detail/error state nil (error/nested state1 error1))
+                (reply :error state nil (error/nested state1 error1))
 
-                (detail/fatal? status1) (reply detail/error state1 value1 error1)
+                (detail/fatal? status1) (reply :error state1 value1 error1)
 
                 :else (reply status1 state1 value1 error1)))]
       (detail/thunk (p state reply1)))))
@@ -220,9 +220,9 @@
    (fn [state reply]
      (letfn [(reply1 [status1 state1 value1 error1]
                (if (detail/fail? status1)
-                 (reply detail/ok state not-found (if (detail/same-state? state1 state)
-                                                    error1
-                                                    (error/nested state1 error1)))
+                 (reply :ok state not-found (if (detail/same-state? state1 state)
+                                              error1
+                                              (error/nested state1 error1)))
                  (reply status1 state1 value1 error1)))]
        (detail/thunk (p state reply1))))))
 
@@ -287,7 +287,7 @@
     (letfn [(reply1 [status1 state1 value1 error1]
               (reply (if (and (detail/ok? status1)
                               (detail/same-state? state1 state))
-                       detail/error
+                       :error
                        status1)
                      state1 value1 error1))]
       (detail/thunk (p state reply1)))))
@@ -302,8 +302,8 @@
      (fn [state reply]
        (letfn [(reply1 [status1 _ _ _]
                  (if (detail/ok? status1)
-                   (reply detail/ok state nil nil)
-                   (reply detail/error state nil error)))]
+                   (reply :ok state nil nil)
+                   (reply :error state nil error)))]
          (detail/thunk (p state reply1)))))))
 
 ;; fparsec: notFollowedBy, notFollowedByL
@@ -316,8 +316,8 @@
      (fn [state reply]
        (letfn [(reply1 [status1 _ _ _]
                  (if (detail/ok? status1)
-                   (reply detail/error state nil error)
-                   (reply detail/ok state nil nil)))]
+                   (reply :error state nil error)
+                   (reply :ok state nil nil)))]
          (detail/thunk (p state reply1)))))))
 
 ;; fparsec: lookAhead
@@ -327,8 +327,8 @@
   (fn [state reply]
     (letfn [(reply1 [status1 state1 value1 error1]
               (if (detail/ok? status1)
-                (reply detail/ok state value1 nil)
-                (reply detail/error state nil (error/nested state1 error1))))]
+                (reply :ok state value1 nil)
+                (reply :error state nil (error/nested state1 error1))))]
       (detail/thunk (p state reply1)))))
 
 ;;---------------------------------------------------------
@@ -337,12 +337,12 @@
 (defn fail [message]
   (core/let [error (error/message message)]
     (fn [state reply]
-      (reply detail/error state nil error))))
+      (reply :error state nil error))))
 
 (defn fatal [message]
   (core/let [error (error/message message)]
     (fn [state reply]
-      (reply detail/fatal state nil error))))
+      (reply :fatal state nil error))))
 
 ;; fparsec: <?>
 (defn as
@@ -377,7 +377,7 @@
                   :else
                   ;; Backtracked -- reply fatal failure to make sure
                   ;; normal parsing doesn't continue.
-                  (reply detail/fatal state nil (error/compound label state1 error1))))]
+                  (reply :fatal state nil (error/compound label state1 error1))))]
         (detail/thunk (p state reply1))))))
 
 ;;---------------------------------------------------------
@@ -489,30 +489,30 @@
 (defn index
   "Returns the index of the next token in the input stream."
   [state reply]
-  (reply detail/ok state (state/index state) nil))
+  (reply :ok state (state/index state) nil))
 
 (defn pos
   "Returns the current position in the input stream."
   [state reply]
-  (reply detail/ok state (state/pos state) nil))
+  (reply :ok state (state/pos state) nil))
 
 (defn user-state
   "Returns the current user state."
   [state reply]
-  (reply detail/ok state (state/user-state state) nil))
+  (reply :ok state (state/user-state state) nil))
 
 (defn set-user-state
   "Sets the user state to `u`."
   [u]
   (fn [state reply]
-    (reply detail/ok (state/with-user-state state u) u nil)))
+    (reply :ok (state/with-user-state state u) u nil)))
 
 (defn swap-user-state
   "Sets ths user state to `(apply f user-state args)`."
   [f & args]
   (fn [state reply]
     (let [u (apply f (state/user-state state) args)]
-      (reply detail/ok (state/with-user-state state u) u nil))))
+      (reply :ok (state/with-user-state state u) u nil))))
 
 (defn match-user-state
   "Succeeds if `pred` returns logical true when called with the current
@@ -520,8 +520,8 @@
   [pred]
   (fn [state reply]
     (if-let [ret (pred (state/user-state state))]
-      (reply detail/ok state ret nil)
-      (reply detail/error state nil error/no-message))))
+      (reply :ok state ret nil)
+      (reply :error state nil error/no-message))))
 
 (comment
   ;; Idea: Coerce values to parser functions

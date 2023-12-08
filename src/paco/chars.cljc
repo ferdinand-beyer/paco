@@ -83,9 +83,9 @@
   (fn [state reply]
     (if-let [ch (state/peek state)]
       (if (pred ch)
-        (reply detail/ok (skip state) ch nil)
-        (reply detail/error state nil (error (error/unexpected-input ch))))
-      (reply detail/error state nil (error error/unexpected-end)))))
+        (reply :ok (skip state) ch nil)
+        (reply :error state nil (error (error/unexpected-input ch))))
+      (reply :error state nil (error error/unexpected-end)))))
 
 ;; fparsec: satisfy; normalises newlines
 (defn match
@@ -104,9 +104,9 @@
     (fn [state reply]
       (if-let [next-ch (state/peek state)]
         (if (= ch next-ch)
-          (reply detail/ok (state/skip-char state) value nil)
-          (reply detail/error state nil (error/merge (error/unexpected-input next-ch) error)))
-        (reply detail/error state nil (error/merge error/unexpected-end error))))))
+          (reply :ok (state/skip-char state) value nil)
+          (reply :error state nil (error/merge (error/unexpected-input next-ch) error)))
+        (reply :error state nil (error/merge error/unexpected-end error))))))
 
 ;; fparsec: pchar
 (defn char [ch]
@@ -119,8 +119,8 @@
 (def any-char
   (fn [state reply]
     (if-let [ch (state/peek state)]
-      (reply detail/ok (state/skip-char state) ch nil)
-      (reply detail/error state nil error/unexpected-end))))
+      (reply :ok (state/skip-char state) ch nil)
+      (reply :error state nil error/unexpected-end))))
 
 ;; fparsec: + skip variants
 (defn any-of [chars]
@@ -182,10 +182,10 @@
         error-end (error/merge error/unexpected-end error)]
     (fn [state reply]
       (if (state/matches-str? state s)
-        (reply detail/ok (state/skip state length) s nil)
-        (reply detail/error state nil (if (state/at-end? state)
-                                       error-end
-                                       error))))))
+        (reply :ok (state/skip state length) s nil)
+        (reply :error state nil (if (state/at-end? state)
+                                  error-end
+                                  error))))))
 
 (defn string-return [ch x]
   (p/return (string ch) x))
@@ -197,11 +197,11 @@
         error-end (error/merge error/unexpected-end error)]
     (fn [state reply]
       (if (state/matches-str-i? state s)
-        (reply detail/ok (state/skip state length)
+        (reply :ok (state/skip state length)
                (state/peek-str state length) nil)
-        (reply detail/error state nil (if (state/at-end? state)
-                                       error-end
-                                       error))))))
+        (reply :error state nil (if (state/at-end? state)
+                                  error-end
+                                  error))))))
 
 ;; fparsec: restOfLine, skipRestOfLine
 ;; fparsec: charsTillString

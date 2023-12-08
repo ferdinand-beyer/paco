@@ -350,7 +350,7 @@
                                 (p/as! "two chars")
                                 p/attempt)
                             "x")]
-      (is (= ::detail/error (:status reply)))
+      (is (detail/error? (:status reply)))
       (is (= ::error/compound (get-in reply [:error :type])))
       (is (= ::error/unexpected (get-in reply [:error :error :type]))))))
 
