@@ -109,7 +109,9 @@
                            `(detail/pass-error ~state ~error ~prev-state ~prev-error)
                            error)]
                  ~(if next-ps
-                    (emit-pipe-body f next-ps state prev-reply values e)
+                    (list `if (list `detail/ok? status)
+                          (emit-pipe-body f next-ps state prev-reply values e)
+                          (list prev-reply status state value e))
                     (list prev-reply status state
                           `(if (detail/ok? ~status)
                              ~(cons f values)

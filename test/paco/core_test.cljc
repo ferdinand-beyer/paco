@@ -123,7 +123,12 @@
     (is (:fail? reply))
     (is (:changed? reply))
     (is (nil? (:value reply)))
-    (is (= (error/message "boom!") (:error reply)))))
+    (is (= (error/message "boom!") (:error reply))))
+
+  (let [reply (helper/run (p/pipe (p/return :ok) (p/fail :nope) vector))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= (error/message :nope) (:error reply)))))
 
 (deftest sequence-test
   (let [reply (helper/run (p/sequence [(p/return :begin) (p/return :end)]))]

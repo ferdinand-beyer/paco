@@ -60,13 +60,8 @@
 
 (declare value)
 
-(def ^:private skip-comma (c/skip-char \,))
-
-;; TODO: p/sep-by
 (defn comma-sep [p]
-  (p/? (p/with [x p
-                xs (p/* (p/then skip-comma p))]
-         (p/return (cons x xs)))))
+  (p/sep-by* p (c/skip-char \,)))
 
 (def array
   (p/with [_ (c/skip-char \[)
@@ -91,7 +86,6 @@
            _ (c/skip-char \})]
     (p/return (into {} entries))))
 
-;; TODO: string-return
 (def value
   (p/with [_ whitespace
            v (p/alts [string
@@ -115,9 +109,22 @@
   (p/parse string "\"foo\\u0044bar\"")
   (p/parse whitespace "   \r\n")
 
+  (p/parse (comma-sep number) "")
   (p/parse (comma-sep number) "1,2,3,4")
 
-  (p/parse object-entry "\"key\" : 19")
+  (p/parse string "19, \"")
+
+  (p/parse (p/alts [string
+                    number
+                    object
+                    array
+                    (c/string-return "true" true)
+                    (c/string-return "false" false)
+                    (c/string-return "null" nil)]
+                   "value")
+           "19, \"")
+
+  (p/parse object-entry "\"key\" : 19, \"bar\": false")
   (p/parse (comma-sep object-entry) "\"key\" : 19, \"bar\": false")
 
   (p/parse json "  ")
