@@ -1,7 +1,6 @@
 (ns paco.core
   (:refer-clojure :exclude [* + cat max min not-empty ref repeat sequence])
-  (:require [clojure.core :as core]
-            [paco.detail :as detail]
+  (:require [paco.detail :as detail]
             [paco.error :as error]
             [paco.state :as state])
   #?(:cljs (:require-macros [paco.core :refer [pipe-parser]])))
@@ -37,9 +36,8 @@
      (reply :ok state x nil)))
   ([p x]
    (fn [state reply]
-     (letfn [(reply1 [status state _value error]
-               (reply status state x error))]
-       (detail/thunk (p state reply1))))))
+     (detail/call p state (fn [status state _value error]
+                            (reply status state x error))))))
 
 ;; fparsec: pzero, but fails
 (defn pnil
@@ -57,25 +55,23 @@
 ;;---------------------------------------------------------
 ;; Chaining and piping
 
-;; Maybe: `(chain p f1 f2 f3 ,,,)`
-;; equiv to `(bind p (fn [v1] (bind (f1 v1) (fn [v2] (bind (f2 v2) ,,,))))
 (defn bind [p f]
   (fn [state reply]
-    (letfn [(reply1 [status1 state1 value1 error1]
-              (if (detail/ok? status1)
-                (let [p2 (f value1)]
-                  (if (nil? error1)
-                    (detail/thunk (p2 state1 reply))
-                    (letfn [(reply2 [status2 state2 value2 error2]
-                              (if (detail/same-state? state1 state2)
-                                (reply status2 state2 value2 (error/merge error1 error2))
-                                (reply status2 state2 value2 error2)))]
-                      (detail/thunk (p2 state1 reply2)))))
-                (reply status1 state1 value1 error1)))]
-      (detail/thunk (p state reply1)))))
+    (detail/call p state
+                 (fn [status1 state1 value1 error1]
+                   (if (detail/ok? status1)
+                     (let [p2 (f value1)]
+                       (if (nil? error1)
+                         (detail/call p2 state1 reply)
+                         (detail/call p2 state1
+                                      (fn [status2 state2 value2 error2]
+                                        (if (detail/same-state? state1 state2)
+                                          (reply status2 state2 value2 (error/merge error1 error2))
+                                          (reply status2 state2 value2 error2))))))
+                     (reply status1 state1 value1 error1))))))
 
 (defn- emit-with [bindings body]
-  (core/let [[binding p] (take 2 bindings)]
+  (let [[binding p] (take 2 bindings)]
     (if (= 2 (count bindings))
       ;; TODO Emit "do" body?
       `(bind ~p (fn [~binding] ~@body))
@@ -96,7 +92,6 @@
   [f ps prev-state prev-reply prev-values prev-error]
   (let [depth    (inc (count prev-values))
         make-sym (fn [prefix] (symbol (str prefix depth)))
-        reply    (make-sym "reply")
         status   (make-sym "status")
         state    (make-sym "state")
         value    (make-sym "value")
@@ -104,20 +99,19 @@
         e        (make-sym "e")
         values   (conj prev-values value)
         next-ps  (next ps)]
-    `(letfn [(~reply [~status ~state ~value ~error]
-               (let [~e ~(if prev-error
-                           `(detail/pass-error ~state ~error ~prev-state ~prev-error)
-                           error)]
-                 ~(if next-ps
-                    (list `if (list `detail/ok? status)
-                          (emit-pipe-body f next-ps state prev-reply values e)
-                          (list prev-reply status state value e))
-                    (list prev-reply status state
-                          `(if (detail/ok? ~status)
-                             ~(cons f values)
-                             ~value)
-                          e))))]
-       (detail/thunk (~(first ps) ~prev-state ~reply)))))
+    `(detail/call ~(first ps) ~prev-state
+                  (fn [~status ~state ~value ~error]
+                    (let [~e ~(if prev-error
+                                `(detail/pass-error ~state ~error ~prev-state ~prev-error)
+                                error)]
+                      ~(if next-ps
+                         (list `if (list `detail/ok? status)
+                               (emit-pipe-body f next-ps state prev-reply values e)
+                               (list prev-reply status state value e))
+                         (list prev-reply status state
+                               `(when (detail/ok? ~status)
+                                  ~(cons f values))
+                               e)))))))
 
 (defn- emit-pipe-parser [ps f]
   (list `fn (symbol (str "pipe" (count ps))) '[state reply]
@@ -195,18 +189,17 @@
 ;; alternate names: try, ptry, recover, !
 (defn attempt [p]
   (fn [state reply]
-    (letfn [(reply1 [status1 state1 value1 error1]
-              (cond
-                (detail/ok? status1)
-                (reply status1 state1 value1 error1)
+    (detail/call p state (fn [status1 state1 value1 error1]
+                           (cond
+                             (detail/ok? status1)
+                             (reply status1 state1 value1 error1)
 
-                (not (detail/same-state? state1 state))
-                (reply :error state nil (error/nested state1 error1))
+                             (not (detail/same-state? state1 state))
+                             (reply :error state nil (error/nested state1 error1))
 
-                (detail/fatal? status1) (reply :error state1 value1 error1)
+                             (detail/fatal? status1) (reply :error state1 value1 error1)
 
-                :else (reply status1 state1 value1 error1)))]
-      (detail/thunk (p state reply1)))))
+                             :else (reply status1 state1 value1 error1))))))
 
 ;; not to be confused with regex negative look-ahead (?!...)
 ;; alternate names: ?!, ?attempt, ?try
@@ -218,13 +211,12 @@
   ([p] (?! p nil))
   ([p not-found]
    (fn [state reply]
-     (letfn [(reply1 [status1 state1 value1 error1]
-               (if (detail/fail? status1)
-                 (reply :ok state not-found (if (detail/same-state? state1 state)
-                                              error1
-                                              (error/nested state1 error1)))
-                 (reply status1 state1 value1 error1)))]
-       (detail/thunk (p state reply1))))))
+     (detail/call p state (fn [status1 state1 value1 error1]
+                            (if (detail/fail? status1)
+                              (reply :ok state not-found (if (detail/same-state? state1 state)
+                                                           error1
+                                                           (error/nested state1 error1)))
+                              (reply status1 state1 value1 error1)))))))
 
 ;; TODO
 ;; Maybe two variants: All errors and only when changed state (`catch` and `catch!`)
@@ -240,17 +232,18 @@
    (alt2 p1 p2 error/merge))
   ([p1 p2 merge-errors]
    (fn [state reply]
-     (letfn [(reply1 [status1 state1 value1 error1]
-               (if (detail/ok? status1)
-                 (reply status1 state1 value1 error1)
-                 (if (nil? error1)
-                   (detail/thunk (p2 state reply))
-                   (letfn [(reply2 [status2 state2 value2 error2]
-                             (reply status2 state2 value2 (if (detail/same-state? state1 state2)
-                                                            (merge-errors error1 error2)
-                                                            error2)))]
-                     (detail/thunk (p2 state reply2))))))]
-       (detail/thunk (p1 state reply1))))))
+     (detail/call p1 state
+                  (fn [status1 state1 value1 error1]
+                    (if (detail/ok? status1)
+                      (reply status1 state1 value1 error1)
+                      (if (nil? error1)
+                        (detail/call p2 state reply)
+                        (detail/call p2 state
+                                     (fn [status2 state2 value2 error2]
+                                       (reply status2 state2 value2
+                                              (if (detail/same-state? state1 state2)
+                                                (merge-errors error1 error2)
+                                                error2)))))))))))
 
 ;; fparsec: <|>
 (defn alt
@@ -272,7 +265,7 @@
      pnil))
   ([ps label]
    (if-let [p (first ps)]
-     (core/let [merge-err (constantly (error/expected label))]
+     (let [merge-err (constantly (error/expected label))]
        (reduce #(alt2 %1 %2 merge-err) p (next ps)))
      pnil)))
 
@@ -284,13 +277,12 @@
   "Like `p`, but fails when `p` does not change the parser state."
   [p]
   (fn [state reply]
-    (letfn [(reply1 [status1 state1 value1 error1]
-              (reply (if (and (detail/ok? status1)
-                              (detail/same-state? state1 state))
-                       :error
-                       status1)
-                     state1 value1 error1))]
-      (detail/thunk (p state reply1)))))
+    (detail/call p state (fn [status1 state1 value1 error1]
+                           (reply (if (and (detail/ok? status1)
+                                           (detail/same-state? state1 state))
+                                    :error
+                                    status1)
+                                  state1 value1 error1)))))
 
 ;; fparsec: followedBy, followedByL
 ;; alternative names: follows, assert-next
@@ -300,11 +292,10 @@
   ([p label]
    (let [error (some-> label error/expected)]
      (fn [state reply]
-       (letfn [(reply1 [status1 _ _ _]
-                 (if (detail/ok? status1)
-                   (reply :ok state nil nil)
-                   (reply :error state nil error)))]
-         (detail/thunk (p state reply1)))))))
+       (detail/call p state (fn [status1 _ _ _]
+                              (if (detail/ok? status1)
+                                (reply :ok state nil nil)
+                                (reply :error state nil error))))))))
 
 ;; fparsec: notFollowedBy, notFollowedByL
 ;; alternative names: assert-not-next
@@ -314,33 +305,31 @@
   ([p label]
    (let [error (some-> label error/unexpected)]
      (fn [state reply]
-       (letfn [(reply1 [status1 _ _ _]
-                 (if (detail/ok? status1)
-                   (reply :error state nil error)
-                   (reply :ok state nil nil)))]
-         (detail/thunk (p state reply1)))))))
+       (detail/call p state (fn [status1 _ _ _]
+                              (if (detail/ok? status1)
+                                (reply :error state nil error)
+                                (reply :ok state nil nil))))))))
 
 ;; fparsec: lookAhead
 ;; names: ?=, ?!, ?<=, ?<!
 (defn look-ahead
   [p]
   (fn [state reply]
-    (letfn [(reply1 [status1 state1 value1 error1]
-              (if (detail/ok? status1)
-                (reply :ok state value1 nil)
-                (reply :error state nil (error/nested state1 error1))))]
-      (detail/thunk (p state reply1)))))
+    (detail/call p state (fn [status1 state1 value1 error1]
+                           (if (detail/ok? status1)
+                             (reply :ok state value1 nil)
+                             (reply :error state nil (error/nested state1 error1)))))))
 
 ;;---------------------------------------------------------
 ;; Customizing error messages
 
 (defn fail [message]
-  (core/let [error (error/message message)]
+  (let [error (error/message message)]
     (fn [state reply]
       (reply :error state nil error))))
 
 (defn fatal [message]
-  (core/let [error (error/message message)]
+  (let [error (error/message message)]
     (fn [state reply]
       (reply :fatal state nil error))))
 
@@ -349,36 +338,35 @@
   "If `p` does not change the parser state, the errors are
    replaced with `(expected label)."
   [p label]
-  (core/let [error (error/expected label)]
+  (let [error (error/expected label)]
     (fn [state reply]
-      (letfn [(reply1 [status1 state1 value1 error1]
-                (reply status1 state1 value1
-                       (if (detail/same-state? state1 state)
-                         error
-                         error1)))]
-        (detail/thunk (p state reply1))))))
+      (detail/call p state (fn [status1 state1 value1 error1]
+                             (reply status1 state1 value1
+                                    (if (detail/same-state? state1 state)
+                                      error
+                                      error1)))))))
 
 ;; fparsec: <??>
 (defn as! [p label]
-  (core/let [error (error/expected label)]
+  (let [error (error/expected label)]
     (fn [state reply]
-      (letfn [(reply1 [status1 state1 value1 error1]
-                (cond
-                  (detail/ok? status1)
-                  (reply status1 state1 value1
-                         (if (detail/same-state? state1 state)
-                           error
-                           error1))
-                  (detail/same-state? state1 state)
-                  (reply status1 state1 nil
-                         (if (error/message? error1 ::error/nested)
-                           (error/nested->compound error1 label)
-                           error))
-                  :else
-                  ;; Backtracked -- reply fatal failure to make sure
-                  ;; normal parsing doesn't continue.
-                  (reply :fatal state nil (error/compound label state1 error1))))]
-        (detail/thunk (p state reply1))))))
+      (detail/call p state
+                   (fn [status1 state1 value1 error1]
+                     (cond
+                       (detail/ok? status1)
+                       (reply status1 state1 value1
+                              (if (detail/same-state? state1 state)
+                                error
+                                error1))
+                       (detail/same-state? state1 state)
+                       (reply status1 state1 nil
+                              (if (error/message? error1 ::error/nested)
+                                (error/nested->compound error1 label)
+                                error))
+                       :else
+                       ;; Backtracked -- reply fatal failure to make sure
+                       ;; normal parsing doesn't continue.
+                       (reply :fatal state nil (error/compound label state1 error1))))))))
 
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
@@ -480,7 +468,7 @@
    It is assumed that `f` uses `p/alt` or similar to eventually stop the
    recursion."
   [f]
-  (core/let [vol (volatile! pnil)]
+  (let [vol (volatile! pnil)]
     (vreset! vol (f (ref vol)))))
 
 ;;---------------------------------------------------------
