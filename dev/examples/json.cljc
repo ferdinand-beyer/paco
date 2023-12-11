@@ -10,7 +10,6 @@
   (p/* (p/as (c/any-of " \r\n\t") "whitespace")))
 
 ;; TODO: reduce to string (fparsec: manyChars, skipped)
-;; TODO: (chars/range \0 \9)
 (def number
   (p/with [integer (p/cat
                     (p/? (c/char \-))
@@ -29,25 +28,24 @@
   #?(:clj  (Long/parseLong s radix)
      :cljs (js/parseInt s radix)))
 
-;; TODO: c/many-string
 (def string
-  (-> (p/* (p/alt (p/then (c/skip-char \\)
-                          (p/alt (c/any-of "\"\\/")
-                                 (c/char-return \b \backspace)
-                                 (c/char-return \f \formfeed)
-                                 (c/char-return \n \newline)
-                                 (c/char-return \r \return)
-                                 (c/char-return \t \tab)
-                                 (p/then (c/skip-char \u)
-                                         (p/pipe
-                                          (p/repeat c/hex 4)
-                                          (fn [chs]
-                                            (-> (str/join chs)
-                                                (parse-int 16)
-                                                char))))))
-                  (c/match #(not (or (#{\" \\} %)
-                                     (c/control? %))))))
-      (p/pipe str/join)
+  (-> (p/alt (-> (c/skip-char \\)
+                 (p/then (p/alt (c/any-of "\"\\/")
+                                (c/char-return \b \backspace)
+                                (c/char-return \f \formfeed)
+                                (c/char-return \n \newline)
+                                (c/char-return \r \return)
+                                (c/char-return \t \tab)
+                                (-> (c/skip-char \u)
+                                    (p/then (-> (p/repeat c/hex 4)
+                                                (p/pipe (fn [chs]
+                                                          (-> (str/join chs)
+                                                              (parse-int 16)
+                                                              char)))))))))
+             (c/match #(not (or (#{\" \\} %)
+                                (c/control? %)))))
+      p/*
+      c/skipped
       (p/between (c/skip-char \"))))
 
 (comment
@@ -63,11 +61,14 @@
   (p/sep-by* p (c/skip-char \,)))
 
 (def array
-  (p/with [_ (c/skip-char \[)
-           _ whitespace
-           values (comma-sep value)
-           _ (c/skip-char \])]
-    (p/return (into [] values))))
+  (-> whitespace
+      (p/then (comma-sep value))
+      (p/between (c/skip-char \[) (c/skip-char \]))))
+
+(comment
+  (p/parse array "[1, 2, 3, 4]")
+  ;;
+  )
 
 (def object-entry
   (p/with [_ whitespace
@@ -98,9 +99,7 @@
            _ whitespace]
     (p/return v)))
 
-(def json
-  (p/with [v value, _ p/end]
-    (p/return v)))
+(def json (p/then-skip value p/end))
 
 (comment
   (p/parse number "172")
