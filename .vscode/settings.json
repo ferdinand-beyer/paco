@@ -1,1 +1,22 @@
-{"calva.fmt.configPath": ".cljfmt.edn"}
+{
+    "calva.fmt.configPath": ".cljfmt.edn",
+    "calva.replConnectSequences": [
+        {
+            "projectType": "deps.edn",
+            "name": "slang",
+            "autoSelectForJackIn": true,
+            "autoSelectForConnect": true,
+            "projectRootPath": [
+                "."
+            ],
+            "cljsType": "none",
+            "menuSelections": {
+                "cljAliases": [
+                    "bench",
+                    "dev",
+                    "test"
+                ]
+            }
+        }
+    ]
+}
