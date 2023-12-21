@@ -20,3 +20,8 @@
   ;; https://vineflower.org/usage/
   (let [args (into-array String ["--folder" "-log=WARN" class-dir class-dir])]
     (org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler/main args)))
+
+(defn recompile [params]
+  (clean params)
+  (compile params)
+  (decompile params))

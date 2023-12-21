@@ -11,7 +11,7 @@
 
 (defn code-point
   "Returns the Unicode code point of `ch` as an integer."
-  [ch]
+  ^long [ch]
   #?(:clj  (unchecked-int (.charValue ^Character ch))
      :cljs (.charCodeAt ^js ch 0)))
 
