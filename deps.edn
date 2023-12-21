@@ -22,4 +22,9 @@
   {:main-opts ["-m"
                "eastwood.lint"
                {:config-files [".eastwood.clj"]}]
-   :extra-deps {jonase/eastwood {:mvn/version "1.4.2"}}}}}
+   :extra-deps {jonase/eastwood {:mvn/version "1.4.2"}}}
+
+  :build
+  {:deps {io.github.clojure/tools.build {:mvn/version "0.9.6"}
+          org.vineflower/vineflower     {:mvn/version "1.9.3"}}
+   :ns-default build}}}
