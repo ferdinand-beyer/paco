@@ -21,4 +21,9 @@
                   :requires ([kaocha.runner])
                   :task (do
                           (println "Running Babashka tests...")
-                          (kaocha.runner/-main "unit"))}}}
+                          (kaocha.runner/-main "unit"))}
+
+         check (run '-check:all #_{:parallel true})
+         -check:all {:depends [check:eastwood]}
+
+         check:eastwood (clojure "-M:eastwood")}}
