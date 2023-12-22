@@ -235,6 +235,9 @@
 (defn str+ [p]
   (detail/reduce-repeat `str+ p detail/string-rf 1))
 
+(defn strcat [& ps]
+  (detail/reduce-sequence detail/string-rf ps))
+
 (defn skipped [p]
   (fn [state reply]
     (let [index0 (state/index state)]

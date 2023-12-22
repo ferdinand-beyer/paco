@@ -86,9 +86,16 @@
        (conj! xs x)))))
 
 (defn string-rf
-  ([] #?(:clj (StringBuilder.), :cljs (StringBuffer.)))
+  "Reducing function that builds a string."
+  ([] #?(:clj  (StringBuilder.)
+         :cljs (StringBuffer.)))
   ([sb] (str sb))
-  ([sb x] (.append ^StringBuilder sb x)))
+  ([sb x]
+   (if (nil? x)
+     sb
+     (if (coll? x)
+       (reduce string-rf sb x)
+       (.append ^StringBuilder sb x)))))
 
 ;;---------------------------------------------------------
 ;; Advanced parsers

@@ -10,20 +10,18 @@
 (def whitespace
   (p/skip* (p/as (c/any-of " \r\n\t") "whitespace")))
 
-;; TODO: reduce to string (fparsec: manyChars, skipped)
 (def number
-  (p/with [integer (p/cat
-                    (p/? (c/char \-))
-                    (p/alt (c/char \0)
-                           (p/cat (c/char-range \1 \9) (p/* c/digit))))
-           fraction (p/? (p/cat (c/char \.) (p/+ c/digit)))
-           exponent (p/? (p/cat (c/any-of "Ee")
-                                (p/? (c/any-of "-+"))
-                                (p/+ c/digit)))]
+  (p/with [integer (c/strcat (p/? (c/char \-))
+                             (p/alt (c/char \0)
+                                    (p/cat (c/char-range \1 \9) (p/* c/digit))))
+           fraction (p/? (c/strcat (c/char \.) (p/+ c/digit)))
+           exponent (p/? (c/strcat (c/any-of "Ee")
+                                   (p/? (c/any-of "-+"))
+                                   (p/+ c/digit)))]
     (p/return
      (if (or fraction exponent)
-       (->> (concat integer fraction exponent) str/join parse-double)
-       (->> integer str/join parse-long)))))
+       (parse-double (str integer fraction exponent))
+       (parse-long integer)))))
 
 (defn- parse-int [s radix]
   #?(:clj  (Long/parseLong s radix)

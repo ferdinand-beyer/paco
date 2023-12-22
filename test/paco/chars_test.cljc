@@ -186,6 +186,12 @@
                                           (chars/string-return "bar" "b")))
                        "foobar"))))
 
+(deftest strcat-test
+  (is (= "0003.1415" (p/parse (chars/strcat (p/+ chars/digit)
+                                            (chars/char \.)
+                                            (p/+ chars/digit))
+                              "0003.1415"))))
+
 (deftest skipped-test
   (is (= "abc" (p/parse (chars/skipped (p/* chars/any-char)) "abc")))
   (let [reply (helper/run (chars/skipped (p/* chars/any-char)) "one\ntwo\n")]

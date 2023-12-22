@@ -51,6 +51,11 @@
                          (c/string "zz")))
            "foobuzz")
 
+  (p/parse (c/strcat (c/string "foo")
+                     (p/* (c/none-of "b"))
+                     (c/string "bar"))
+           "foobar")
+
   (p/parse (p/group (c/string "foo")
                     (p/cat (c/string "bu")
                            (c/string "zz")))
