@@ -83,7 +83,7 @@
   (fn [state reply]
     (if-let [ch (state/peek state)]
       (if (pred ch)
-        (reply :ok (skip state) ch nil)
+        (reply :ok (skip state 1) ch nil)
         (reply :error state nil (error (error/unexpected-input ch))))
       (reply :error state nil (error error/unexpected-end)))))
 
@@ -92,7 +92,7 @@
   ([pred]
    (match pred nil))
   ([pred label]
-   (match-char pred state/skip-char
+   (match-char pred state/skip
                (if label
                  (let [error (error/expected label)]
                    #(error/merge error %))
@@ -104,7 +104,7 @@
     (fn [state reply]
       (if-let [next-ch (state/peek state)]
         (if (= ch next-ch)
-          (reply :ok (state/skip-char state) value nil)
+          (reply :ok (state/skip state 1) value nil)
           (reply :error state nil (error/merge (error/unexpected-input next-ch) error)))
         (reply :error state nil (error/merge error/unexpected-end error))))))
 
@@ -119,18 +119,18 @@
 (def any-char
   (fn [state reply]
     (if-let [ch (state/peek state)]
-      (reply :ok (state/skip-char state) ch nil)
+      (reply :ok (state/skip state 1) ch nil)
       (reply :error state nil error/unexpected-end))))
 
 ;; fparsec: + skip variants
 (defn any-of [chars]
   ;; TODO: Optimise for newlines?
   (let [error (map error/expected-input chars)]
-    (match-char (set chars) state/skip-char #(error/merge error %))))
+    (match-char (set chars) state/skip #(error/merge error %))))
 
 (defn none-of [chars]
   ;; TODO: (expected "any char not in ...")
-  (match-char (complement (set chars)) state/skip-char identity))
+  (match-char (complement (set chars)) state/skip identity))
 
 (defn char-range
   ([min-ch max-ch]
@@ -190,7 +190,7 @@
         error-end (error/merge error/unexpected-end error)]
     (fn [state reply]
       (if (state/matches-str? state s)
-        (reply :ok (state/skip state length) s nil)
+        (reply :ok (state/untracked-skip state length) s nil)
         (reply :error state nil (if (state/at-end? state)
                                   error-end
                                   error))))))
@@ -205,7 +205,7 @@
         error-end (error/merge error/unexpected-end error)]
     (fn [state reply]
       (if (state/matches-str-i? state s)
-        (reply :ok (state/skip state length)
+        (reply :ok (state/untracked-skip state length)
                (state/peek-str state length) nil)
         (reply :error state nil (if (state/at-end? state)
                                   error-end

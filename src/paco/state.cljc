@@ -1,159 +1,102 @@
 (ns paco.state
   (:refer-clojure :exclude [peek])
   (:require #?(:cljs [goog.string :as gstr])
-            [paco.pos :as pos]))
+            [paco.pos :as pos])
+  #?(:clj (:import [clojure.lang IPersistentMap])))
 
 #?(:clj (set! *warn-on-reflection* true))
 
-;;---------------------------------------------------------
-;; IStream
-
-(defprotocol IStream
-  (index [stream])
-  (peek [stream]
+(defprotocol IState
+  (index [state]
+    "Returns the index of the next token.")
+  (at-end? [state]
+    "Returns true if this is the end of the input.")
+  (peek [state] [state offset]
     "Return the next token in the stream, or `nil` when at the end.")
-  (skip [stream n]
-    "Advances the stream by `n` tokens, without position tracking."))
+  (user-state [state]
+    "Returns the user-state.")
+  (with-user-state [state u]
+    "Returns a new state with `u` as the user state.")
+  (skip [state n]
+    "Advances the state by up to `n` tokens."))
 
-(defn at-end? [stream]
-  (nil? (peek stream)))
-
-;;---------------------------------------------------------
-;; ICharStream
-
-(defprotocol ICharStream
-  (peek-str [stream n]
+(defprotocol ICharState
+  (peek-str [state n]
     "Peeks up to `n` characters and returns them as a string.")
-  (matches-str? [stream s]
+  (matches-str? [state s]
     "Returns true if the next characters match `s`.")
-  (matches-str-i? [stream s]
-    "Returns true if the next characters match `s`, ignoring case."))
+  (matches-str-i? [state s]
+    "Returns true if the next characters match `s`, ignoring case.")
+  (untracked-skip [state n]
+    "Advances the state by up to `n` tokens without line tracking."))
 
-;;---------------------------------------------------------
-;; EndStream
+(deftype StringState [^String input
+                      ^#?(:clj int, :cljs number) start
+                      ^#?(:clj int, :cljs number) end
+                      ^#?(:clj int, :cljs number) line
+                      ^#?(:clj int, :cljs number) line-start
+                      ^IPersistentMap user]
+  IState
+  (index [_] start)
+  (at-end? [_] (= start end))
+  (peek [_] (when (< start end) (.charAt input start)))
+  (peek [_ offset]
+    (let [index (unchecked-add start offset)]
+      (when (< index end)
+        (.charAt input (unchecked-add start offset)))))
+  (user-state [_] user)
+  (with-user-state [this u]
+    (if (identical? user u)
+      this
+      (StringState. input start end line line-start u)))
+  (skip [this n]
+    (if (pos? n)
+      (loop [i (min (int n) (unchecked-subtract-int end start))
+             start start
+             line line
+             line-start line-start]
+        (if (pos? i)
+          (let [next-start (inc start)]
+            (case (.charAt input start)
+              \return (if (and (< next-start end)
+                               (= \newline (.charAt input next-start)))
+                        (recur (dec i) next-start line line-start)
+                        (recur (dec i) next-start (inc line) next-start))
+              \newline (recur (dec i) next-start (inc line) next-start)
+              (recur (dec i) next-start line line-start)))
+          (StringState. input start end line line-start user)))
+      this))
 
-(deftype EndStream [index]
-  IStream
-  (index [_] index)
-  (peek [_] nil)
-  (skip [this _] this)
-
-  ICharStream
-  (peek-str [_ _] nil)
-  (matches-str? [_ s] (empty? s))
-  (matches-str-i? [_ s] (empty? s)))
-
-;;---------------------------------------------------------
-;; StringStream
-
-(deftype StringStream [^String input
-                       ^#?(:clj int :cljs number) index]
-  IStream
-  (index [_] index)
-  (peek [_] (.charAt input index))
-  (skip [_ n]
-    (let [new-index (unchecked-add index n)
-          length    (#?(:clj .length :cljs .-length) input)]
-      (if (< new-index length)
-        (StringStream. input new-index)
-        (EndStream. length))))
-
-  ICharStream
+  ICharState
   (peek-str [_ n]
-    (subs input index
-          (min (unchecked-add index n)
-               (#?(:clj .length :cljs .-length) input))))
+    (when (< start end)
+      (.substring input start (min (unchecked-add start n) end))))
   (matches-str? [_ s]
-    #?(:clj  (.regionMatches input index s 0 (.length ^String s))
-       :cljs (let [end (unchecked-add index (.-length s))]
-               (when (<= end (.-length input))
-                 (= (.substring input index end) s)))))
+    #?(:clj  (.regionMatches input start s 0 (.length ^String s))
+       :cljs (let [e (unchecked-add start (.-length s))]
+               (and (<= e end) (= (.substring input start e) s)))))
   (matches-str-i? [_ s]
-    #?(:clj  (.regionMatches input true index s 0 (.length ^String s))
-       :cljs (let [end (unchecked-add index (.-length s))]
-               (when (<= end (.-length input))
-                 (gstr/caseInsensitiveEquals (.substring input index end) s))))))
-
-(defn string-stream [^String input]
-  (if #?(:clj  (.isEmpty input)
-         :cljs (zero? (.-length input)))
-    (EndStream. 0)
-    (StringStream. input 0)))
-
-;;---------------------------------------------------------
-;; State
-
-;; ? Maybe support stream transform functions
-;; - normalize newlines to \n
-
-(deftype State [stream
-                ^#?(:clj int :cljs number) line
-                ^#?(:clj int :cljs number) line-begin
-                user-state]
-  IStream
-  (index [_] (index stream))
-  (peek [_] (peek stream))
-  (skip [_ n] (State. (skip stream n) line line-begin user-state))
-
-  ICharStream
-  (peek-str [_ n] (peek-str stream n))
-  (matches-str? [_ s] (matches-str? stream s))
-  (matches-str-i? [_ s] (matches-str-i? stream s))
+    #?(:clj  (.regionMatches input true start s 0 (.length ^String s))
+       :cljs (let [e (unchecked-add start (.-length s))]
+               (and (<= e end) (gstr/caseInsensitiveEquals (.substring input start e) s)))))
+  (untracked-skip [this n]
+    (if (pos? n)
+      (StringState. input (min (unchecked-add start n) end) end line line-start user)
+      this))
 
   pos/IPosition
   (line-index [_] line)
-  (column-index [_] (unchecked-subtract (index stream) line-begin)))
+  (column-index [_] (unchecked-subtract start line-start)))
 
 (defn of-string
   ([s]
    (of-string s nil))
   ([s user-state]
-   (State. (string-stream s) 0 0 user-state))
-  ([s user-state pos]
-   (State. (string-stream s)
-           (pos/line-index pos)
-           (- (pos/column-index pos))
-           user-state)))
+   (StringState. s 0 #?(:clj (.length ^String s), :cljs (.-length ^js s)) 0 0 user-state)))
 
 ;; TODO: Support different input types and options (e.g. starting pos)?
 (defn of [input _opts]
   (of-string input))
 
 (defn pos [state]
-  (pos/->Position (pos/line-index state)
-                  (pos/column-index state)))
-
-(defn user-state [^State state]
-  (.-user-state state))
-
-(defn with-user-state [^State state user-state]
-  (State. (.-stream state)
-          (.-line state)
-          (.-line-begin state)
-          user-state))
-
-(defn- same-line [^State state stream]
-  (State. stream
-          (.-line state)
-          (.-line-begin state)
-          (.-user-state state)))
-
-(defn- next-line [^State state stream]
-  (State. stream
-          (unchecked-inc (.-line state))
-          (index stream)
-          (.-user-state state)))
-
-(defn skip-char
-  "Skips to the next character, tracking line numbers."
-  [^State state]
-  (let [stream (.-stream state)]
-    (if-let [c (peek stream)]
-      (let [new-stream (skip stream 1)]
-        (case c
-          \return (if (= \newline (peek new-stream))
-                    (same-line state new-stream)
-                    (next-line state new-stream))
-          \newline (next-line state new-stream)
-          (same-line state new-stream)))
-      state)))
+  (pos/->Position (pos/line-index state) (pos/column-index state)))
