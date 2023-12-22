@@ -227,8 +227,13 @@
 ;; fparsec: regex
 ;; fparsec: identifier
 
-;; fparsec: combine parsers to return strings
-;;   manyChars, manyStrings, skipped
+;; fparsec: manyChars, manyStrings
+(defn str* [p]
+  (detail/reduce-repeat `str* p detail/string-rf 0))
+
+;; fparsec: many1Chars, many1Strings
+(defn str+ [p]
+  (detail/reduce-repeat `str+ p detail/string-rf 1))
 
 (defn skipped [p]
   (fn [state reply]

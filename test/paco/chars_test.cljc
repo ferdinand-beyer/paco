@@ -140,7 +140,7 @@
 
 (deftest octal-test
   (are [ch] (chars/octal? ch) \0 \1 \5 \7)
-  (are [ch] (not (chars/octal? ch)) \8 \9 \a \A\Æ \æ \ß \? \u0000)
+  (are [ch] (not (chars/octal? ch)) \8 \9 \a \A \Æ \æ \ß \? \u0000)
   (is (= \0 (p/parse chars/octal "0733")))
   (is (:fail? (helper/run chars/octal "999"))))
 
@@ -174,6 +174,17 @@
 
 (deftest string-return-test
   (is (= ::ok (p/parse (chars/string-return "ok" ::ok) "okay"))))
+
+(deftest str*-test
+  (is (= "" (p/parse (chars/str* (chars/string "foo")) "bar")))
+  (is (= "fb" (p/parse (chars/str* (p/alt (chars/string-return "foo" \f)
+                                          (chars/string-return "bar" "b")))
+                       "foobar"))))
+
+(deftest str+-test
+  (is (= "fb" (p/parse (chars/str+ (p/alt (chars/string-return "foo" \f)
+                                          (chars/string-return "bar" "b")))
+                       "foobar"))))
 
 (deftest skipped-test
   (is (= "abc" (p/parse (chars/skipped (p/* chars/any-char)) "abc")))

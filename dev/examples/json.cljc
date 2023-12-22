@@ -8,7 +8,7 @@
 ;; TODO: skip-match
 ;; TODO: <??>, label fail! (aka, as)
 (def whitespace
-  (p/* (p/as (c/any-of " \r\n\t") "whitespace")))
+  (p/skip* (p/as (c/any-of " \r\n\t") "whitespace")))
 
 ;; TODO: reduce to string (fparsec: manyChars, skipped)
 (def number
@@ -45,8 +45,7 @@
                                                               char)))))))))
              (c/match #(not (or (#{\" \\} %)
                                 (c/control? %)))))
-      p/*
-      c/skipped
+      c/str*
       (p/between (c/skip-char \"))))
 
 (comment

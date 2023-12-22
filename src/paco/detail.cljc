@@ -1,7 +1,8 @@
 (ns paco.detail
   (:require [paco.error :as error]
             [paco.state :as state])
-  #?(:cljs (:require-macros [paco.detail :refer [call same-state? thunk]])))
+  #?(:cljs (:require-macros [paco.detail :refer [call same-state? thunk]]))
+  #?(:cljs (:import [goog.string StringBuffer])))
 
 (defn ok? [status]
   (#?(:clj identical?, :cljs keyword-identical?) :ok status))
@@ -83,6 +84,11 @@
      (if (contains? (meta x) seqexp-tag)
        (reduce conj! xs x)
        (conj! xs x)))))
+
+(defn string-rf
+  ([] #?(:clj (StringBuilder.), :cljs (StringBuffer.)))
+  ([sb] (str sb))
+  ([sb x] (.append ^StringBuilder sb x)))
 
 ;;---------------------------------------------------------
 ;; Advanced parsers
