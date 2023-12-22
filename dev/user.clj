@@ -1,9 +1,12 @@
 (ns user
-  (:require [paco.chars :as c]
-            [paco.core :as p]
-            [criterium.core :as criterium]))
+  (:require [clojure.tools.namespace.repl :as repl]
+            [criterium.core :as criterium]
+            [paco.chars :as c]
+            [paco.core :as p]))
 
 (comment
+  (repl/refresh)
+
   (p/parse (p/pipe (c/char \1)
                    (c/char \2)
                    (c/char \3)

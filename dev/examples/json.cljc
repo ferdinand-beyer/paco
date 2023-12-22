@@ -55,14 +55,14 @@
   ;;
   )
 
-(declare value)
-
 (defn comma-sep [p]
   (p/sep-by* p (c/skip-char \,)))
 
+(declare value)
+
 (def array
   (-> whitespace
-      (p/then (comma-sep value))
+      (p/then (comma-sep (p/lazy value)))
       (p/between (c/skip-char \[) (c/skip-char \]))))
 
 (comment
