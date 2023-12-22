@@ -33,13 +33,14 @@
 (deftype StringState [^String input
                       ^#?(:clj int, :cljs number) start
                       ^#?(:clj int, :cljs number) end
+                      ^Character ch
                       ^#?(:clj int, :cljs number) line
                       ^#?(:clj int, :cljs number) line-start
                       ^IPersistentMap user]
   IState
   (index [_] start)
-  (at-end? [_] (= start end))
-  (peek [_] (when (< start end) (.charAt input start)))
+  (at-end? [_] (nil? ch))
+  (peek [_] ch)
   (peek [_ offset]
     (let [index (unchecked-add start offset)]
       (when (< index end)
@@ -48,7 +49,7 @@
   (with-user-state [this u]
     (if (identical? user u)
       this
-      (StringState. input start end line line-start u)))
+      (StringState. input start end ch line line-start u)))
   (skip [this n]
     (if (pos? n)
       (loop [i (min (int n) (unchecked-subtract-int end start))
@@ -64,7 +65,9 @@
                         (recur (dec i) next-start (inc line) next-start))
               \newline (recur (dec i) next-start (inc line) next-start)
               (recur (dec i) next-start line line-start)))
-          (StringState. input start end line line-start user)))
+          (if (< start end)
+            (StringState. input start end (.charAt input start) line line-start user)
+            (StringState. input end end nil line line-start user))))
       this))
 
   ICharState
@@ -81,7 +84,10 @@
                (and (<= e end) (gstr/caseInsensitiveEquals (.substring input start e) s)))))
   (untracked-skip [this n]
     (if (pos? n)
-      (StringState. input (min (unchecked-add start n) end) end line line-start user)
+      (let [start (unchecked-add start n)]
+        (if (< start end)
+          (StringState. input start end (.charAt input start) line line-start user)
+          (StringState. input end end nil line line-start user)))
       this))
 
   pos/IPosition
@@ -92,7 +98,8 @@
   ([s]
    (of-string s nil))
   ([s user-state]
-   (StringState. s 0 #?(:clj (.length ^String s), :cljs (.-length ^js s)) 0 0 user-state)))
+   (let [len #?(:clj (.length ^String s), :cljs (.-length ^js s))]
+     (StringState. s 0 len (when (pos? len) (.charAt ^String s 0)) 0 0 user-state))))
 
 ;; TODO: Support different input types and options (e.g. starting pos)?
 (defn of [input _opts]
