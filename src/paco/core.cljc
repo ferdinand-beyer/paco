@@ -487,6 +487,7 @@
   [state reply]
   (reply :ok state (state/index state) nil))
 
+;; TODO: This assumes an underlying char stream?
 (defn pos
   "Returns the current position in the input stream."
   [state reply]
@@ -519,15 +520,41 @@
       (reply :ok state ret nil)
       (reply :error state nil error/no-message))))
 
-(comment
-  ;; Idea: Coerce values to parser functions
-  (defprotocol IParserCoercible
-    (as-parser [_]))
+;;---------------------------------------------------------
+;; Nesting parsers
 
-  #_{:clj-kondo/ignore [:unresolved-namespace]}
-  (extend-protocol IParserCoercible
-    #?(:clj String :cljs js/String)
-    (as-parser [s] (char/string s)))
+;; TODO: Track `index`
+;; Maybe: cache indexes of newlines seen, so that we can
+;; efficiently translate between index and line/col?
+(defrecord Token [value pos])
 
-  ;;
-  )
+(defn token
+  "Behaves like `p`, but wraps its return value in a `Token` record."
+  [p]
+  (with [pos pos, val p]
+    (return (Token. val pos))))
+
+(defn tokenizer
+  "Tokenizes the input stream using the parser `p`, skipping over tokens
+   matching `skip-p` (e.g. whitespace).  Returns a sequence of `Token`
+   records."
+  [p skip-p]
+  (then (? skip-p) (sep-end-by* (token p) skip-p)))
+
+(defn embed
+  "Parses the return value of `p` using the `inner-p` parser."
+  [p inner-p]
+  (fn [state reply]
+    (detail/call p state
+                 (fn [status1 state1 value1 error1]
+                   (if (detail/ok? status1)
+                     ;; TODO: How to share position information between states?
+                     ;; TODO: Share user state?
+                     (detail/call inner-p (state/of value1 nil)
+                                  (fn [status2 state2 value2 error2]
+                                    ;; TODO: How do we combine errors?
+                                    ;; Probably compare state indexes
+                                    (if (detail/ok? status2)
+                                      (reply :ok state1 value2 nil)
+                                      (reply status2 state2 nil error2))))
+                     (reply status1 state1 value1 error1))))))
