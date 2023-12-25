@@ -83,7 +83,7 @@
   (fn [state reply]
     (if-let [ch (state/peek state)]
       (if (pred ch)
-        (reply :ok (skip state 1) ch nil)
+        (reply :ok (skip state) ch nil)
         (reply :error state nil (error (error/unexpected-input ch))))
       (reply :error state nil (error error/unexpected-end)))))
 
@@ -104,7 +104,7 @@
     (fn [state reply]
       (if-let [next-ch (state/peek state)]
         (if (= ch next-ch)
-          (reply :ok (state/skip state 1) value nil)
+          (reply :ok (state/skip state) value nil)
           (reply :error state nil (error/merge (error/unexpected-input next-ch) error)))
         (reply :error state nil (error/merge error/unexpected-end error))))))
 
@@ -119,7 +119,7 @@
 (def any-char
   (fn [state reply]
     (if-let [ch (state/peek state)]
-      (reply :ok (state/skip state 1) ch nil)
+      (reply :ok (state/skip state) ch nil)
       (reply :error state nil error/unexpected-end))))
 
 ;; fparsec: + skip variants

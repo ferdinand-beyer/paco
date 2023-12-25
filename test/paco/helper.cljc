@@ -23,5 +23,5 @@
 
 (defn any [state reply]
   (if-let [token (state/peek state)]
-    (reply :ok (state/skip state 1) token nil)
+    (reply :ok (state/skip state) token nil)
     (reply :error state nil error/unexpected-end)))

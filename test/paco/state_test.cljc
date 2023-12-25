@@ -82,29 +82,29 @@
 
 (deftest line-tracking-test
   (testing "keeps line unchanged when not at a newline"
-    (let [s (state/skip (state/of-string "example") 1)]
+    (let [s (state/skip (state/of-string "example"))]
       (is (= 1 (state/index s)))
       (is (= 0 (pos/line-index s)))
       (is (= 1 (pos/column-index s)))))
 
   (testing "tracks Unix-style newlines"
-    (let [s (state/skip (state/of-string "\n") 1)]
+    (let [s (state/skip (state/of-string "\n"))]
       (is (= 1 (state/index s)))
       (is (= 1 (pos/line-index s)))
       (is (= 0 (pos/column-index s)))))
 
   (testing "tracks Mac-style newlines"
-    (let [s (state/skip (state/of-string "\r") 1)]
+    (let [s (state/skip (state/of-string "\r"))]
       (is (= 1 (state/index s)))
       (is (= 1 (pos/line-index s)))
       (is (= 0 (pos/column-index s)))))
 
   (testing "tracks Windows-style newlines"
-    (let [s (state/skip (state/of-string "\r\n") 1)]
+    (let [s (state/skip (state/of-string "\r\n"))]
       (is (= 1 (state/index s)))
       (is (= 0 (pos/line-index s)))
       (is (= 1 (pos/column-index s)))
-      (let [s (state/skip s 1)]
+      (let [s (state/skip s)]
         (is (= 2 (state/index s)))
         (is (= 1 (pos/line-index s)))
         (is (= 0 (pos/column-index s)))))))

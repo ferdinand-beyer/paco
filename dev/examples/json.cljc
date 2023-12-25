@@ -11,17 +11,20 @@
   (p/skip* (p/as (c/any-of " \r\n\t") "whitespace")))
 
 (def number
-  (p/with [integer (c/strcat (p/? (c/char \-))
-                             (p/alt (c/char \0)
-                                    (p/cat (c/char-range \1 \9) (p/* c/digit))))
-           fraction (p/? (c/strcat (c/char \.) (p/+ c/digit)))
-           exponent (p/? (c/strcat (c/any-of "Ee")
-                                   (p/? (c/any-of "-+"))
-                                   (p/+ c/digit)))]
-    (p/return
-     (if (or fraction exponent)
-       (parse-double (str integer fraction exponent))
-       (parse-long integer)))))
+  (let [integer (c/strcat (p/? (c/char \-))
+                          (p/alt (c/char \0)
+                                 (p/cat (c/char-range \1 \9) (p/* c/digit))))
+        fraction (p/? (c/strcat (c/char \.) (p/+ c/digit)))
+        exponent (p/? (c/strcat (c/any-of "Ee")
+                                (p/? (c/any-of "-+"))
+                                (p/+ c/digit)))]
+    (p/with [integer integer
+             fraction fraction
+             exponent exponent]
+      (p/return
+       (if (or fraction exponent)
+         (parse-double (str integer fraction exponent))
+         (parse-long integer))))))
 
 (defn- parse-int [s radix]
   #?(:clj  (Long/parseLong s radix)
@@ -84,17 +87,18 @@
     (p/return (into {} entries))))
 
 (def value
-  (p/with [_ whitespace
-           v (p/alts [string
-                      number
-                      object
-                      array
-                      (c/string-return "true" true)
-                      (c/string-return "false" false)
-                      (c/string-return "null" nil)]
-                     "value")
-           _ whitespace]
-    (p/return v)))
+  (let [value (p/alts [string
+                       number
+                       object
+                       array
+                       (c/string-return "true" true)
+                       (c/string-return "false" false)
+                       (c/string-return "null" nil)]
+                      "value")]
+    (p/with [_ whitespace
+             v value
+             _ whitespace]
+      (p/return v))))
 
 (def json (p/then-skip value p/end))
 
@@ -150,6 +154,27 @@
   (criterium/quick-bench
    (p/parse json input))
   ;; Execution time mean : 595,354831 µs
+
+  (criterium/quick-bench
+   (reduce unchecked-add-int 0 (map int input)))
+  ;; Execution time mean : 346,534090 µs
+
+  (criterium/quick-bench
+   (reduce (fn [acc ch] (unchecked-add-int acc (int ch))) 0 input))
+  ;; Execution time mean : 19,981302 µs
+
+  (criterium/quick-bench
+   (transduce (map int) (completing unchecked-add-int) 0 input))
+  ;; Execution time mean : 27,656179 µs
+
+  (criterium/quick-bench
+   (let [len (.length ^String input)]
+     (loop [i (int 0)
+            acc (int 0)]
+       (if (< i len)
+         (recur (unchecked-inc-int i) (unchecked-add-int acc (int (.charAt ^String input i))))
+         acc))))
+  ;; Execution time mean : 4,949979 µs
 
   ;;
   )
