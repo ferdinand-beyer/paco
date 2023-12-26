@@ -1,5 +1,5 @@
 (ns paco.chars
-  (:refer-clojure :exclude [char])
+  (:refer-clojure :exclude [char newline])
   (:require [paco.core :as p]
             [paco.detail :as detail]
             [paco.error :as error]
@@ -79,6 +79,25 @@
 ;;---------------------------------------------------------
 ;; Character parsers
 
+(defn newline-return [value]
+  (fn [state reply]
+    (if-let [ch (state/peek state)]
+      (if (= \newline ch)
+        (reply :ok (state/skip state) value nil)
+        (if (= \return ch)
+          (let [state (state/skip state)]
+            (reply :ok (if (= \newline (state/peek state))
+                         (state/skip state)
+                         state)
+                   value nil))
+          (reply :error state nil (error/merge (error/expected "newline")
+                                               (error/unexpected-input ch)))))
+      (reply :error state nil error/unexpected-end))))
+
+(def newline (newline-return \newline))
+
+(def skip-newline (newline-return nil))
+
 (defn- match-char [pred skip error]
   (fn [state reply]
     (if-let [ch (state/peek state)]
@@ -92,19 +111,24 @@
   ([pred]
    (match pred nil))
   ([pred label]
-   (match-char pred state/skip
+   (match-char pred
+               (if (or (pred \newline) (pred \return))
+                 state/skip
+                 state/untracked-skip)
                (if label
                  (let [error (error/expected label)]
                    #(error/merge error %))
                  identity))))
 
 (defn char-return [ch value]
-  ;; TODO: optimise for non-newline
-  (let [error (error/expected-input ch)]
+  (let [skip  (if (or (= \newline ch) (= \return ch))
+                state/skip
+                state/untracked-skip)
+        error (error/expected-input ch)]
     (fn [state reply]
       (if-let [next-ch (state/peek state)]
         (if (= ch next-ch)
-          (reply :ok (state/skip state) value nil)
+          (reply :ok (skip state) value nil)
           (reply :error state nil (error/merge (error/unexpected-input next-ch) error)))
         (reply :error state nil (error/merge error/unexpected-end error))))))
 
@@ -125,12 +149,22 @@
 ;; fparsec: + skip variants
 (defn any-of [chars]
   ;; TODO: Optimise for newlines?
-  (let [error (map error/expected-input chars)]
-    (match-char (set chars) state/skip #(error/merge error %))))
+  (let [charset (set chars)
+        error   (map error/expected-input charset)]
+    (match-char charset
+                (if (or (charset \newline) (charset \return))
+                  state/skip
+                  state/untracked-skip)
+                #(error/merge error %))))
 
 (defn none-of [chars]
   ;; TODO: (expected "any char not in ...")
-  (match-char (complement (set chars)) state/skip identity))
+  (let [charset (set chars)]
+    (match-char (complement charset)
+                (if (and (charset \newline) (charset \return))
+                  state/untracked-skip
+                  state/skip)
+                identity)))
 
 (defn char-range
   ([min-ch max-ch]

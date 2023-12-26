@@ -155,26 +155,5 @@
    (p/parse json input))
   ;; Execution time mean : 595,354831 µs
 
-  (criterium/quick-bench
-   (reduce unchecked-add-int 0 (map int input)))
-  ;; Execution time mean : 346,534090 µs
-
-  (criterium/quick-bench
-   (reduce (fn [acc ch] (unchecked-add-int acc (int ch))) 0 input))
-  ;; Execution time mean : 19,981302 µs
-
-  (criterium/quick-bench
-   (transduce (map int) (completing unchecked-add-int) 0 input))
-  ;; Execution time mean : 27,656179 µs
-
-  (criterium/quick-bench
-   (let [len (.length ^String input)]
-     (loop [i (int 0)
-            acc (int 0)]
-       (if (< i len)
-         (recur (unchecked-inc-int i) (unchecked-add-int acc (int (.charAt ^String input i))))
-         acc))))
-  ;; Execution time mean : 4,949979 µs
-
   ;;
   )
