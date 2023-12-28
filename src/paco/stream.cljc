@@ -8,47 +8,89 @@
 
 #?(:clj (set! *warn-on-reflection* true))
 
-;; Conditional macros:
-
-;; bb: #?(:bb)
-;; cljs: (:ns &env)
+(deftype SavePoint [^long mod-count ^long index user-state])
 
 (defprotocol IState
-  (user-state [state])
-  (set-user-state! [state user-state]))
+  (mod-count [state])
+  (save-point [state])
+  (backtrack! [state save-point]))
+
+(defprotocol IInternalState
+  (internal-mod-count [state])
+  (internal-modified! [state])
+  (internal-save-point [state scanner])
+  (internal-backtrack! [state scanner save-point]))
+
+(deftype InternalState [^#?(:clj :unsynchronized-mutable, :cljs :mutable) ^long mod-count*
+                        ^#?(:clj :unsynchronized-mutable, :cljs :mutable) user-state*]
+  IInternalState
+  (internal-mod-count [_] mod-count*)
+  (internal-modified! [_] (set! mod-count* (unchecked-inc mod-count*)))
+  (internal-save-point [_ scanner]
+    (SavePoint. mod-count* (.index ^IScanner scanner) user-state*))
+  (internal-backtrack! [_ scanner save-point]
+    (.seek ^IScanner scanner (.-index ^SavePoint save-point))
+    (set! mod-count* (.-mod-count ^SavePoint save-point))
+    (set! user-state* (.-user-state ^SavePoint save-point))))
+
+(defn- internal-state []
+  (InternalState. 0 nil))
+
+(defmacro ^:private modified-when-skipped [internal-state skip-call]
+  `(let [n# ~skip-call]
+     (when (pos? n#)
+       (.internal-modified! ~internal-state))
+     n#))
 
 #?(:clj
-   (deftype State [^IScanner scanner user-state]
-     IScanner
-     (index [_] (.index scanner))
-     (atEnd [_] (.atEnd scanner))
-     (peekToken [_] (.peekToken scanner))
-     (matchesToken [_ token] (.matchesToken scanner token))
-     (skip [_] (.skip scanner))
-     (skip [_ n] (.skip scanner n))
-     (skipWhile [_ pred] (.skipWhile scanner pred))
-     (seek [_ index] (.seek scanner index))))
+   (deftype GenericState [^InternalState internal ^IScanner scanner]
+     IState
+     (mod-count [_] (.internal-mod-count internal))
+     (save-point [_] (.internal-save-point internal scanner))
+     (backtrack! [_ save-point] (.internal-backtrack! internal scanner save-point))
 
-#?(:clj
-   (deftype CharState [^ICharScanner scanner
-                       ^LineTracker line-tracker
-                       user-state]
      IScanner
      (index [_] (.index scanner))
      (atEnd [_] (.atEnd scanner))
      (peekToken [_] (.peekToken scanner))
      (matchesToken [_ token] (.matchesToken scanner token))
      (skip [_]
-       (if line-tracker
-         (.skip line-tracker scanner)
-         (.skip scanner)))
+       (modified-when-skipped internal (.skip scanner)))
      (skip [_ n]
-       (if line-tracker
-         (.skip line-tracker scanner n)
-         (.skip scanner n)))
+       (modified-when-skipped internal (.skip scanner n)))
+     (skipWhile [_ pred]
+       (modified-when-skipped internal (.skipWhile scanner pred)))
+     (seek [_ index]
+       (.internal-modified! internal)
+       (.seek scanner index))))
+
+#?(:clj
+   (deftype CharState [^InternalState internal
+                       ^ICharScanner scanner
+                       ^LineTracker line-tracker]
+     IState
+     (mod-count [_] (.internal-mod-count internal))
+     (save-point [_] (.internal-save-point internal scanner))
+     (backtrack! [_ save-point] (.internal-backtrack! internal scanner save-point))
+
+     IScanner
+     (index [_] (.index scanner))
+     (atEnd [_] (.atEnd scanner))
+     (peekToken [_] (.peekToken scanner))
+     (matchesToken [_ token] (.matchesToken scanner token))
+     (skip [_]
+       (modified-when-skipped internal (if line-tracker
+                                         (.skip line-tracker scanner)
+                                         (.skip scanner))))
+     (skip [_ n]
+       (modified-when-skipped internal (if line-tracker
+                                         (.skip line-tracker scanner n)
+                                         (.skip scanner n))))
      (skipWhile [this pred]
        (.skipCharsWhile this (CharPredicate/of pred)))
-     (seek [_ index] (.seek scanner index))
+     (seek [_ index]
+       (.internal-modified! internal)
+       (.seek scanner index))
 
      ICharScanner
      (peekChar [_] (.peekChar scanner))
@@ -59,9 +101,13 @@
      (matchesStringCI [_ s] (.matchesStringCI scanner s))
      (match [_ p] (.match scanner p))
      (skipCharsWhile [_ pred]
-       (if line-tracker
-         (.skipCharsWhile line-tracker scanner pred)
-         (.skipCharsWhile scanner pred)))))
+       (modified-when-skipped internal
+                              (if line-tracker
+                                (.skipCharsWhile line-tracker scanner pred)
+                                (.skipCharsWhile scanner pred))))))
+
+(defn char-state ^CharState [input]
+  (CharState. (internal-state) (StringScanner. input) (LineTracker.)))
 
 (defn read-rest-of-line [^ICharScanner scanner]
   (when-let [m (.match scanner #"^[^\r\n]*(?:\n|\r\n?|$)")]
@@ -71,39 +117,59 @@
 
 (comment
   (require '[criterium.core :as criterium])
-  (def input (slurp "src/paco/stream.cljc"))
+  (def input (slurp "dev/experiments/citm_catalog.json"))
 
-  ;; The X marks the spot.
+  ;; find the first 'x' (120) on 8344, Ln 290, Col 28
+  (.index scanner)
+  (mod-count scanner)
+  (.. scanner -line-tracker (position (.index scanner)))
 
-  (let [scanner (CharState. (StringScanner. input) (LineTracker.) nil)]
-    (.skipWhile scanner (fn [^long ch] (not= 88 ch))))
+  (let [scanner (char-state input)]
+    (.skipWhile scanner (fn [^long ch] (not= 120 ch))))
 
-  (let [scanner (CharState. (StringScanner. input) (LineTracker.) nil)]
-    (criterium/quick-bench
-     (.skipWhile scanner (fn [^long ch] (not= 88 ch)))))
-  ;; Execution time mean : 7,635343 ns
+  (do
+    (def scanner (char-state input))
+    (let [s ^CharState scanner]
+      (criterium/quick-bench
+       (.skipWhile s (fn [^long ch] (not= 120 ch))))))
+  ;; Execution time mean : 642,200156 ns
+  ;; Execution time mean : 7,542247 ns
 
-  (let [scanner (CharState. (StringScanner. input) (LineTracker.) nil)]
-    (criterium/quick-bench
-     (.skipCharsWhile scanner (CharPredicate/equals \X))))
-  ;; Execution time mean : 3,482621 ns
+  (do
+    (def scanner (char-state input))
+    (let [s ^CharState scanner]
+      (criterium/quick-bench
+       (.skipCharsWhile s (CharPredicate/notEquals \x)))))
+  ;; Execution time mean : 583,029694 ns
+  ;; Execution time mean : 4,303737 ns
 
-  (let [scanner (CharState. (StringScanner. input) (LineTracker.) nil)]
-    (criterium/quick-bench
-     (.skipWhile scanner (complement #{\X}))))
-  ;; Execution time mean : 20,988696 ns
-
-  (let [scanner (CharState. (StringScanner. input) (LineTracker.) nil)]
-    (criterium/quick-bench
-     (.skipWhile scanner (fn [ch] (not= \X ch)))))
-  ;; Execution time mean : 12,439039 ns
-
-  (let [scanner (CharState. (StringScanner. input) (LineTracker.) nil)]
+  (let [scanner (char-state input)]
     (criterium/quick-bench
      (.skipWhile scanner (constantly true))))
-  ;; Execution time mean : 8,943564 ns
+  ;; Execution time mean : 637,123359 ns
+  ;; Execution time mean : 6,246791 ns
 
-  (def ^ICharScanner scanner (CharState. (StringScanner. input) (LineTracker.) nil))
+  (do
+    (def scanner (char-state input))
+    (let [s ^CharState scanner]
+      (criterium/quick-bench
+       (.skipWhile s (constantly true)))))
+  ;; Execution time mean : 585,414406 ns
+  ;; Execution time mean : 6,163118 ns
+
+  (criterium/quick-bench
+   (reduce (fn [^long n _] (unchecked-inc n)) 0 input))
+  ;; Execution time mean : 3,539938 ms
+
+  (criterium/quick-bench
+   (loop [i (.length ^String input)
+          n (int 0)]
+     (if (pos? i)
+       (recur (unchecked-dec-int i) (unchecked-inc-int n))
+       n)))
+  ;; Execution time mean : 109,575511 µs
+
+  (def ^ICharScanner scanner (char-state input))
   (read-rest-of-line scanner)
 
   ;;
