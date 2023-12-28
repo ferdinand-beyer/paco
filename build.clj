@@ -11,6 +11,12 @@
 (defn clean [_]
   (b/delete {:path "target"}))
 
+(defn javac [_]
+  (b/javac {:basis basis
+            :src-dirs ["src"]
+            :class-dir class-dir
+            :javac-opts []}))
+
 (defn compile [_]
   (b/compile-clj {:basis basis
                   :class-dir class-dir
@@ -23,5 +29,6 @@
 
 (defn recompile [params]
   (clean params)
+  (javac params)
   (compile params)
   (decompile params))

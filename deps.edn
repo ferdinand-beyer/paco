@@ -1,7 +1,7 @@
 {:paths ["src" "resources"]
  :aliases
  {:dev
-  {:extra-paths ["dev"]
+  {:extra-paths ["dev" "target/classes"]
    :extra-deps {com.clojure-goes-fast/clj-async-profiler {:mvn/version "1.1.1"}
                 criterium/criterium                      {:mvn/version "0.4.6"}
                 org.clojure/tools.namespace              {:mvn/version "1.4.4"}}
@@ -23,10 +23,11 @@
                 the/parsatron                {:mvn/version "0.0.8"}}}
 
   :eastwood
-  {:main-opts ["-m"
+  {:extra-paths ["target/classes"]
+   :extra-deps {jonase/eastwood {:mvn/version "1.4.2"}}
+   :main-opts ["-m"
                "eastwood.lint"
-               {:config-files [".eastwood.clj"]}]
-   :extra-deps {jonase/eastwood {:mvn/version "1.4.2"}}}
+               {:config-files [".eastwood.clj"]}]}
 
   :build
   {:deps {io.github.clojure/tools.build {:mvn/version "0.9.6"}
