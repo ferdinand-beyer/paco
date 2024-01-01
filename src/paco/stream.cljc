@@ -21,8 +21,10 @@
   (internal-save-point [state scanner])
   (internal-backtrack! [state scanner save-point]))
 
-(deftype InternalState [^#?(:clj :unsynchronized-mutable, :cljs :mutable) ^long mod-count*
-                        ^#?(:clj :unsynchronized-mutable, :cljs :mutable) user-state*]
+(deftype InternalState #?(:clj  [^:unsynchronized-mutable ^long mod-count*
+                                 ^:unsynchronized-mutable user-state*]
+                          :cljs [^:mutable ^number mod-count*
+                                 ^:mutable user-state*])
   IInternalState
   (internal-mod-count [_] mod-count*)
   (internal-modified! [_] (set! mod-count* (unchecked-inc mod-count*)))

@@ -13,7 +13,7 @@ public interface CharPredicate {
     CharPredicate WHITESPACE = Character::isWhitespace;
     CharPredicate ISO_CONTROL = Character::isISOControl;
     CharPredicate DIGIT = inRange('0', '9');
-    CharPredicate HEX = or(inRange('0', '9'), or(inRange('a', 'f'), inRange('A', 'F')));
+    CharPredicate HEX = or(DIGIT, or(inRange('a', 'f'), inRange('A', 'F')));
     CharPredicate OCTAL = inRange('0', '7');
 
     boolean satisfies(char ch);

@@ -2,7 +2,7 @@
   (:require [paco.detail :as detail]
             [paco.error :as error])
   (:import [clojure.lang MapEntry]
-           [java.util.regex MatchResult]
+           [java.util.regex MatchResult Pattern]
            [paco.impl
             CharPredicate
             ICharScanner
@@ -142,6 +142,15 @@
   (.skipCharsWhile scanner CharPredicate/WHITESPACE)
   (ok reply nil))
 
+(defn regex [^Pattern pattern label]
+  (let [err (error/expected label)]
+    (fn [^ICharScanner scanner reply]
+      (if-let [^MatchResult m (.match scanner pattern)]
+        (do
+          (.skip scanner (- (.end m) (.start m)))
+          (ok reply (re-groups m)))
+        (fail reply (unexpected scanner err))))))
+
 (defn number [^ICharScanner scanner reply]
   (if-let [^MatchResult m (.match scanner #"^-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
     (let [s (.group m)
@@ -257,30 +266,79 @@
 
 ;; Composite parsers
 
+(def slow-string-remainder
+  (let [hex      (match-char CharPredicate/HEX "hex digit")
+        two-hex  (pipe hex hex list)
+        unicode  (pipe two-hex two-hex
+                       (fn [[a b] [c d]]
+                         (-> (str a b c d)
+                             (Long/parseLong 16)
+                             char)))
+        dispatch (alt (any-of "\"\\/")
+                      (char-return \b \backspace)
+                      (char-return \f \formfeed)
+                      (char-return \n \newline)
+                      (char-return \r \return)
+                      (char-return \t \tab)
+                      (then (skip-char \u) unicode))
+        escape   (then (skip-char \\) dispatch)
+        regular  (match-char (CharPredicate/and
+                              (CharPredicate/notAmong "\"\\")
+                              (CharPredicate/not CharPredicate/ISO_CONTROL))
+                             "char")
+        char     (alt escape regular)
+        quote    (skip-char \")]
+    (fn [^StringBuilder sb]
+      (let [rf (fn
+                 ([] sb)
+                 ([_sb] (.toString sb))
+                 ([_sb ^Character c] (.append sb c)))]
+        ;; could optimise: we know we start with an escape sequence
+        (-> (many rf char)
+            (then-skip2 quote))))))
 
 (def string
-  (let [q (skip-char \")
-        u (let [h (match-char CharPredicate/HEX "hex digit")
-                p (pipe h h list)]
-            (pipe p p (fn [[a b] [c d]]
-                        (-> (str a b c d)
-                            (Long/parseLong 16)
-                            char))))
-        c (match-char (CharPredicate/not
-                       (CharPredicate/or
-                        (CharPredicate/among "\"\\")
-                        CharPredicate/ISO_CONTROL))
-                      "char")
-        e (then (skip-char \\)
-                (alt (any-of "\"\\/")
-                     (char-return \b \backspace)
-                     (char-return \f \formfeed)
-                     (char-return \n \newline)
-                     (char-return \r \return)
-                     (char-return \t \tab)
-                     (then (skip-char \u) u)))
-        s (many detail/string-rf (alt e c))]
-    (between s q q)))
+  (let [quote    (CharPredicate/equals \")
+        regular  (CharPredicate/notAmong "\"\\")
+        quote-ch (long (int \"))
+        expected (error/expected-input \")]
+
+    (letfn [(string [^ICharScanner scanner reply]
+              ;; keep short to encourage inlining
+              (if (.matches scanner quote)
+                (fast-string scanner reply)
+                (fail reply expected)))
+
+            (fast-string [^ICharScanner scanner reply]
+              ;; skip over start quote
+              (.skip scanner)
+              (let [start (.index scanner)]
+                (loop []
+                  (if (.matches scanner regular)
+                    (do
+                      (.skip scanner)
+                      (recur))
+                    ;; found either closing quote or escape sequence
+                    (let [ch (.peekChar scanner)]
+                      (if (neg? ch)
+                        (fail reply (error/merge error/unexpected-end expected))
+                        (let [n (unchecked-subtract (.index scanner) start)]
+                          (.seek scanner start)
+                          (let [s (.peekString scanner n)]
+                            (if (= quote-ch ch)
+                              (do
+                                (.skip scanner (unchecked-inc n))
+                                (ok reply s))
+                              (do
+                                (.skip scanner n)
+                                (slow scanner s reply)))))))))))
+
+            (slow [^ICharScanner scanner ^String prefix reply]
+              (let [sb (StringBuilder. prefix)
+                    p  (slow-string-remainder sb)]
+                (p scanner reply)))]
+
+      string)))
 
 (defn comma-sep [p]
   (sep-by p (skip-char \,)))
@@ -332,6 +390,12 @@
   (parse eof "foo")
   (parse skip-whitespace "   ")
 
+  (parse fast-string "\"foobar\"")
+  (parse fast-string "\"foobar")
+  (parse fast-string "\"foobar\\r\\n\\\"\\u0067\"")
+
+  (parse (regex #"^-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?" "number") "1.2e-2")
+
   (parse number "1e7")
 
   (parse (then (comma-sep number) eof) "1.23123,")
@@ -355,8 +419,8 @@
 
   (criterium/quick-bench
    (parse json input))
-  ;; Execution time mean : 39,345940 ms
-  ;; data.json: ~25ms
+  ;; Execution time mean : 20,948151 ms
+  ;; data.json (2.4.0): ~25ms
   ;; paco/cps: ~180ms
 
   (require '[clojure.data.json :as json])
@@ -365,6 +429,10 @@
   (def them (json/read-str input))
 
   (= us them)
+
+  (criterium/quick-bench
+   (json/read-str input))
+  ;; Execution time mean : 25,200389 ms
 
   ;;
   )

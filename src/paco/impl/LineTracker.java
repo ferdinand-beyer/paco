@@ -7,13 +7,15 @@ public final class LineTracker {
     private static final long NEWLINE = (long) '\n';
     private static final long RETURN = (long) '\r';
 
+    private static final int INITIAL_CAPACITY = 16;
+
     private long[] lineStarts;
     private int size;
 
     private long maxIndex;
 
     public LineTracker() {
-        lineStarts = new long[16];
+        lineStarts = new long[INITIAL_CAPACITY];
         size = 0;
         maxIndex = 0;
     }
@@ -26,7 +28,7 @@ public final class LineTracker {
         }
     }
 
-    private void push(long start) {
+    private void pushLineStart(long start) {
         ensureCapacity(size + 1);
         lineStarts[size++] = start;
     }
@@ -35,11 +37,11 @@ public final class LineTracker {
         return track(index, ch, -1L);
     }
 
-    public boolean track(long index, long ch1, long ch2) {
+    public boolean track(long index, long ch, long nextCh) {
         if (index > maxIndex) {
             maxIndex = index;
-            if (ch1 == NEWLINE || (ch1 == RETURN && ch2 != NEWLINE)) {
-                push(index + 1);
+            if (ch == NEWLINE || (ch == RETURN && nextCh != NEWLINE)) {
+                pushLineStart(index + 1);
                 return true;
             }
         }
@@ -47,8 +49,11 @@ public final class LineTracker {
     }
 
     public long skip(ICharScanner scanner) {
-        track(scanner.index(), scanner.peekChar());
-        return scanner.skip();
+        final long index = scanner.index();
+        final long ch = scanner.peekChar();
+        final long n = scanner.skip();
+        track(index, ch, scanner.peekChar());
+        return n;
     }
 
     public long skip(ICharScanner scanner, long n) {
