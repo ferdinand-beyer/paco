@@ -5,13 +5,13 @@
             [paco.detail.parser :as parser]
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
-            [paco.detail.scanner :as scanner]
-            [paco.state :as state]))
+            [paco.detail.scanner :as scanner]))
 
 (defn- result-data [scanner reply]
-  {:status     (reply/status reply)
+  {:ok?        (reply/ok? reply)
    :value      (reply/value reply)
    :error      (reply/error reply)
+   :index      (scanner/index scanner)
    :position   (scanner/position scanner)
    :user-state (scanner/user-state scanner)})
 
@@ -33,13 +33,7 @@
       (throw (parse-exception scanner reply)))))
 
 ;;---------------------------------------------------------
-
-(defn any-token [scanner reply]
-  (if-some [token (scanner/peek scanner)]
-    (do
-      (scanner/skip! scanner)
-      (reply/ok reply token))
-    (reply/fail reply (scanner/unexpected-error scanner))))
+;; Basic parsers
 
 ;; fparsec: preturn, >>%
 (defn return
@@ -63,6 +57,25 @@
   (if (scanner/end? scanner)
     (reply/ok reply nil)
     (reply/fail reply error/expected-end)))
+
+(defn any-token [scanner reply]
+  (if-some [token (scanner/peek scanner)]
+    (do
+      (scanner/skip! scanner)
+      (reply/ok reply token))
+    (reply/fail reply (error/unexpected-token-or-end scanner))))
+
+(defn token-return [token value]
+  (let [expected (error/expected-input token)]
+    (fn [scanner reply]
+      (if (= token (scanner/peek scanner))
+        (do
+          (scanner/skip! scanner)
+          (reply/ok reply value))
+        (reply/fail reply (error/merge expected (error/unexpected-token-or-end scanner)))))))
+
+(defn token [token]
+  (token-return token token))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping
@@ -138,22 +151,22 @@
   "Applies the parsers in sequence and returns the result of the last one."
   ([p] p)
   ([p1 p2]
-   (dp/with-seq [x p1, _ p2] x))
+   (dp/with-seq [_ p1, x p2] x))
   ([p1 p2 p3]
-   (dp/with-seq [x p1, _ p2, _ p3] x))
+   (dp/with-seq [_ p1, _ p2, x p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/pseq (list* p1 p2 p3 p4 more) reply/first-collector)))
+   (dp/pseq (list* p1 p2 p3 p4 more) reply/last-collector)))
 
 ;; fparsec: .>>
 (defn then-skip
   "Applies the parsers in sequence and returns the result of the first one."
   ([p] p)
   ([p1 p2]
-   (dp/with-seq [_ p1, x p2] x))
+   (dp/with-seq [x p1, _ p2] x))
   ([p1 p2 p3]
-   (dp/with-seq [_ p1, _ p2, x p3] x))
+   (dp/with-seq [x p1, _ p2, _ p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/pseq (list* p1 p2 p3 p4 more) reply/last-collector)))
+   (dp/pseq (list* p1 p2 p3 p4 more) reply/first-collector)))
 
 ;; fparsetc: .>>.: like (cat p1 p2)
 
@@ -164,26 +177,67 @@
    (dp/with-seq [_ popen, x p, _ pclose] x)))
 
 ;;---------------------------------------------------------
-;; Parsing alternatives and recovering from errors
+;; Customizing and recovering from errors
+
+(defn fail [message]
+  (let [error (error/message message)]
+    (fn [_scanner reply]
+      (reply/fail reply error))))
+
+;; fparsec: <?>
+(defn as
+  "If `p` does not change the parser state, the errors are
+   replaced with `(expected label)."
+  [p label]
+  (let [expected-error (error/expected label)]
+    (reify parser/IParser
+      (apply [_ scanner reply]
+        (let [modcount (scanner/modcount scanner)
+              reply    (parser/apply p scanner reply)]
+          (if (= modcount (scanner/modcount scanner))
+            (reply/with-error reply expected-error)
+            reply)))
+      (children [_] [p]))))
+
+;; fparsec: <??>
+(defn as! [p label]
+  (let [expected-error (error/expected label)]
+    (reify parser/IParser
+      (apply [_ scanner reply]
+        (let [state (scanner/state scanner)
+              reply (parser/apply p scanner reply)]
+          (if (reply/ok? reply)
+            (if (scanner/in-state? scanner state)
+              (reply/with-error reply expected-error)
+              reply)
+            (let [error (reply/error reply)]
+              (if (scanner/in-state? scanner state)
+                (reply/with-error reply (if (error/message? error ::error/nested)
+                                          (error/nested->compound error label)
+                                          expected-error))
+                (do
+                  ;; Backtrack, but keep mark the scanner as modified, so that
+                  ;; normal parsing does not continue.
+                  (scanner/backtrack-modified! scanner state)
+                  (reply/with-error reply (error/compound label scanner error))))))))
+      (children [_] [p]))))
 
 ;; TODO: Other fparsec-style backtracking operators
 ;; fparsec: >>=?, >>? (should be >>.?), .>>.?
 ;; These backtrack to the beginning if the second parser fails
 ;; "with a non‐fatal error and without changing the parser state"
-;; alternate names: try, ptry, recover, !
+;; alternate names: try, ptry, recover, !, atomic
 (defn attempt [p]
-  (fn [state reply]
-    (detail/call p state (fn [status1 state1 value1 error1]
-                           (cond
-                             (detail/ok? status1)
-                             (reply status1 state1 value1 error1)
-
-                             (not (detail/same-state? state1 state))
-                             (reply :error state nil (error/nested state1 error1))
-
-                             (detail/fatal? status1) (reply :error state1 value1 error1)
-
-                             :else (reply status1 state1 value1 error1))))))
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [state (scanner/state scanner)
+            reply (parser/apply p scanner reply)]
+        (if (or (reply/ok? reply) (scanner/in-state? scanner state))
+          reply
+          (let [error (error/nested scanner (reply/error reply))]
+            (scanner/backtrack! scanner state)
+            (reply/fail reply error)))))
+    (children [_] [p])))
 
 ;; not to be confused with regex negative look-ahead (?!...)
 ;; alternate names: ?!, ?attempt, ?try
@@ -194,13 +248,18 @@
    `(?! p)` is an optimized implementation of `(? (attempt p))`."
   ([p] (?! p nil))
   ([p not-found]
-   (fn [state reply]
-     (detail/call p state (fn [status1 state1 value1 error1]
-                            (if (detail/fail? status1)
-                              (reply :ok state not-found (if (detail/same-state? state1 state)
-                                                           error1
-                                                           (error/nested state1 error1)))
-                              (reply status1 state1 value1 error1)))))))
+   (reify parser/IParser
+     (apply [_ scanner reply]
+       (let [state (scanner/state scanner)
+             reply (parser/apply p scanner reply)]
+         (if (reply/ok? reply)
+           reply
+           (if (scanner/in-state? scanner state)
+             (reply/ok reply not-found (reply/error reply))
+             (let [error (error/nested scanner (reply/error reply))]
+               (scanner/backtrack! scanner state)
+               (reply/ok reply not-found error))))))
+     (children [_] [p]))))
 
 ;; TODO
 ;; Maybe two variants: All errors and only when changed state (`catch` and `catch!`)
@@ -211,23 +270,26 @@
    `(f error)`."
     [p f])
 
+;;---------------------------------------------------------
+;; Parsing alternatives
+
 (defn- alt2
   ([p1 p2]
-   (alt2 p1 p2 error/merge))
-  ([p1 p2 merge-errors]
-   (fn [state reply]
-     (detail/call p1 state
-                  (fn [status1 state1 value1 error1]
-                    (if (detail/ok? status1)
-                      (reply status1 state1 value1 error1)
-                      (if (nil? error1)
-                        (detail/call p2 state reply)
-                        (detail/call p2 state
-                                     (fn [status2 state2 value2 error2]
-                                       (reply status2 state2 value2
-                                              (if (detail/same-state? state1 state2)
-                                                (merge-errors error1 error2)
-                                                error2)))))))))))
+   (alt2 p1 p2 true))
+  ([p1 p2 merge-errors?]
+   (reify parser/IParser
+     (apply [_ scanner reply]
+       (let [modcount (scanner/modcount scanner)
+             reply    (parser/apply p1 scanner reply)]
+         (if (or (reply/ok? reply)
+                 (not= modcount (scanner/modcount scanner)))
+           reply
+           (let [error (reply/error reply)
+                 reply (parser/apply p2 scanner reply)]
+             (if (and merge-errors? (= modcount (scanner/modcount scanner)))
+               (reply/with-error reply (error/merge error (reply/error reply)))
+               reply)))))
+     (children [_] [p1 p2]))))
 
 ;; fparsec: <|>
 (defn alt
@@ -249,8 +311,7 @@
      pnil))
   ([ps label]
    (if-let [p (first ps)]
-     (let [merge-err (constantly (error/expected label))]
-       (reduce #(alt2 %1 %2 merge-err) p (next ps)))
+     (as (reduce #(alt2 %1 %2 false) p (next ps)) label)
      pnil)))
 
 ;;---------------------------------------------------------
@@ -260,13 +321,14 @@
 (defn not-empty
   "Like `p`, but fails when `p` does not change the parser state."
   [p]
-  (fn [state reply]
-    (detail/call p state (fn [status1 state1 value1 error1]
-                           (reply (if (and (detail/ok? status1)
-                                           (detail/same-state? state1 state))
-                                    :error
-                                    status1)
-                                  state1 value1 error1)))))
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [modcount (scanner/modcount scanner)
+            reply    (parser/apply p scanner reply)]
+        (if (= modcount (scanner/modcount scanner))
+          (reply/with-ok reply false)
+          reply)))
+    (children [_] [p])))
 
 ;; fparsec: followedBy, followedByL
 ;; alternative names: follows, assert-next
@@ -274,12 +336,17 @@
   ([p]
    (followed-by p nil))
   ([p label]
-   (let [error (some-> label error/expected)]
-     (fn [state reply]
-       (detail/call p state (fn [status1 _ _ _]
-                              (if (detail/ok? status1)
-                                (reply :ok state nil nil)
-                                (reply :error state nil error))))))))
+   (let [expected-error (some-> label error/expected)]
+     (reify parser/IParser
+       (apply [_ scanner reply]
+         (let [state (scanner/state scanner)
+               reply (parser/apply p scanner reply)]
+           (when-not (scanner/in-state? scanner state)
+             (scanner/backtrack! scanner state))
+           (if (reply/ok? reply)
+             (reply/ok reply nil)
+             (reply/fail reply expected-error))))
+       (children [_] [p])))))
 
 ;; fparsec: notFollowedBy, notFollowedByL
 ;; alternative names: assert-not-next
@@ -287,80 +354,46 @@
   ([p]
    (not-followed-by p nil))
   ([p label]
-   (let [error (some-> label error/unexpected)]
-     (fn [state reply]
-       (detail/call p state (fn [status1 _ _ _]
-                              (if (detail/ok? status1)
-                                (reply :error state nil error)
-                                (reply :ok state nil nil))))))))
+   (let [expected-error (some-> label error/unexpected)]
+     (reify parser/IParser
+       (apply [_ scanner reply]
+         (let [state (scanner/state scanner)
+               reply (parser/apply p scanner reply)]
+           (when-not (scanner/in-state? scanner state)
+             (scanner/backtrack! scanner state))
+           (if (reply/ok? reply)
+             (reply/fail reply expected-error)
+             (reply/ok reply nil))))
+       (children [_] [p])))))
 
 ;; fparsec: lookAhead
 ;; names: ?=, ?!, ?<=, ?<!
 (defn look-ahead
   [p]
-  (fn [state reply]
-    (detail/call p state (fn [status1 state1 value1 error1]
-                           (if (detail/ok? status1)
-                             (reply :ok state value1 nil)
-                             (reply :error state nil (error/nested state1 error1)))))))
-
-;;---------------------------------------------------------
-;; Customizing error messages
-
-(defn fail [message]
-  (let [error (error/message message)]
-    (fn [state reply]
-      (reply :error state nil error))))
-
-(defn fatal [message]
-  (let [error (error/message message)]
-    (fn [state reply]
-      (reply :fatal state nil error))))
-
-;; fparsec: <?>
-(defn as
-  "If `p` does not change the parser state, the errors are
-   replaced with `(expected label)."
-  [p label]
-  (let [error (error/expected label)]
-    (fn [state reply]
-      (detail/call p state (fn [status1 state1 value1 error1]
-                             (reply status1 state1 value1
-                                    (if (detail/same-state? state1 state)
-                                      error
-                                      error1)))))))
-
-;; fparsec: <??>
-(defn as! [p label]
-  (let [error (error/expected label)]
-    (fn [state reply]
-      (detail/call p state
-                   (fn [status1 state1 value1 error1]
-                     (cond
-                       (detail/ok? status1)
-                       (reply status1 state1 value1
-                              (if (detail/same-state? state1 state)
-                                error
-                                error1))
-                       (detail/same-state? state1 state)
-                       (reply status1 state1 nil
-                              (if (error/message? error1 ::error/nested)
-                                (error/nested->compound error1 label)
-                                error))
-                       :else
-                       ;; Backtracked -- reply fatal failure to make sure
-                       ;; normal parsing doesn't continue.
-                       ;; TODO: Is it worth having a fatal error status just for this use case?
-                       (reply :fatal state nil (error/compound label state1 error1))))))))
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [state (scanner/state scanner)
+            reply (parser/apply p scanner reply)]
+        (if (reply/ok? reply)
+          (do
+            (when-not (scanner/in-state? scanner state)
+              (scanner/backtrack! scanner state))
+            (reply/with-error reply nil))
+          (if (scanner/in-state? scanner state)
+            reply
+            (let [error (error/nested scanner (reply/error reply))]
+              (scanner/backtrack! scanner state)
+              (reply/fail reply error))))))
+    (children [_] [p])))
 
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
 
 (defn cats [ps]
-  (detail/reduce-sequence detail/seqexp-rf ps))
+  (dp/pseq ps reply/seqex-collector))
 
 (defn cat [& ps]
-  (detail/reduce-sequence detail/seqexp-rf ps))
+  (dp/pseq ps reply/seqex-collector))
 
 ;; alternative names: opt, maybe
 (defn ?
@@ -373,35 +406,53 @@
 (defn *
   "Zero or more."
   [p]
-  (detail/reduce-repeat `* p detail/seqexp-rf 0))
+  (dp/repeat-many `* p reply/seqex-collector))
 
 (defn +
   "One or more."
   [p]
-  (detail/reduce-repeat `+ p detail/seqexp-rf 1))
+  (dp/repeat-min `+ p reply/seqex-collector 1))
 
 ;; fparsec: skipMany
 ;; or: *skip
 (defn skip* [p]
-  (detail/reduce-repeat `skip* p detail/ignore 0))
+  (dp/repeat-many `skip* p reply/nil-collector))
 
 ;; fparsec: skipMany1
 ;; or: +skip
 (defn skip+ [p]
-  (detail/reduce-repeat `skip+ p detail/ignore 1))
+  (dp/repeat-min `skip+ p reply/nil-collector 1))
 
 ;; fparsec: parray, +skipArray
 (defn repeat
   ([p n]
-   (detail/reduce-repeat `repeat p detail/seqexp-rf n n))
+   (dp/repeat-times `repeat p reply/seqex-collector n))
   ([p min max]
-   (detail/reduce-repeat `repeat p detail/seqexp-rf min max)))
+   (dp/repeat-min-max `repeat p reply/seqex-collector min max)))
+
+(comment
+  ;; TODO: Collectors are broken!
+
+  (parse (cat (group any-token) (* any-token))
+         "abcdefgh")
+  ; => [\a \b \c \d \e \f \g \h]
+
+  (parse (cat (group any-token any-token) (* any-token))
+         "abcdefgh")
+  ; => [[\a \b] \c \d \e \f \g \h]
+
+  (parse (cat (group any-token (* any-token)) (* any-token))
+         "abcdefgh")
+  ; => [\b \c \d \e \f \g \h [\a :paco.detail.reply/complete]]
+
+  ;;
+  )
 
 (defn min [p n]
-  (detail/reduce-repeat `min p detail/seqexp-rf n))
+  (dp/repeat-min `min p reply/seqex-collector n))
 
 (defn max [p n]
-  (detail/reduce-repeat `max p detail/seqexp-rf 0 n))
+  (dp/repeat-max `max p reply/seqex-collector n))
 
 (defn sep-by* [p sep]
   (detail/reduce-sep `sep-by* p sep detail/vector-rf true false))
@@ -429,6 +480,8 @@
 
 ;; fparsec: manyTill + variants
 
+;; *until?
+
 (defn till* [p endp]
   (detail/reduce-till `till* p endp detail/vector-rf true false))
 
@@ -440,18 +493,19 @@
 ;;---------------------------------------------------------
 ;; Lazy / recursive
 
-;; Note that we can use #'var as well
 (defmacro lazy [& body]
-  `(detail/pforce (delay ~@body)))
+  `(dp/pforce (delay ~@body)))
 
 ;; fparsec: createParserForwardedToRef
 (defn ref
   "Returns a parser that forwards all calls to the parser returned
    by `@ref`.  Useful to construct recursive parsers."
   [ref]
-  (fn [state reply]
-    (let [p @ref]
-      (detail/thunk (p state reply)))))
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [p @ref]
+        (parser/apply p scanner reply)))
+    (children [_] [@ref])))
 
 (defn rec
   "Creates a recursive parser.  Calls `f` with one arg, a parser to recur,
@@ -468,77 +522,81 @@
 
 (defn index
   "Returns the index of the next token in the input stream."
-  [state reply]
-  (reply :ok state (state/index state) nil))
+  [scanner reply]
+  (reply/ok reply (scanner/index scanner)))
 
 ;; TODO: This assumes an underlying char stream?
 (defn pos
   "Returns the current position in the input stream."
-  [state reply]
-  (reply :ok state (state/pos state) nil))
+  [scanner reply]
+  (reply/ok reply (scanner/position scanner)))
 
 (defn user-state
   "Returns the current user state."
-  [state reply]
-  (reply :ok state (state/user-state state) nil))
+  [scanner reply]
+  (reply/ok reply (scanner/user-state scanner)))
 
 (defn set-user-state
-  "Sets the user state to `u`."
+  "Sets the user scanner to `u`."
   [u]
-  (fn [state reply]
-    (reply :ok (state/with-user-state state u) u nil)))
+  (fn [scanner reply]
+    (scanner/with-user-state! scanner u)
+    (reply/ok reply u)))
 
 (defn swap-user-state
-  "Sets ths user state to `(apply f user-state args)`."
+  "Sets ths user scanner to `(apply f user-state args)`."
   [f & args]
-  (fn [state reply]
-    (let [u (apply f (state/user-state state) args)]
-      (reply :ok (state/with-user-state state u) u nil))))
+  (fn [scanner reply]
+    (let [u (apply f (scanner/user-state scanner) args)]
+      (scanner/with-user-state! scanner u)
+      (reply/ok reply u))))
 
 (defn match-user-state
   "Succeeds if `pred` returns logical true when called with the current
-   user state, otherwise it fails.  Returns the return value of `pred`."
+   user scanner, otherwise it fails.  Returns the return value of `pred`."
   [pred]
-  (fn [state reply]
-    (if-let [ret (pred (state/user-state state))]
-      (reply :ok state ret nil)
-      (reply :error state nil error/no-message))))
+  (fn [scanner reply]
+    (if-let [ret (pred (scanner/user-state scanner))]
+      (reply/ok reply ret)
+      (reply/fail reply error/no-message))))
 
 ;;---------------------------------------------------------
 ;; Nesting parsers
 
+;; TODO: Move this to a separate namespace?
+
 ;; TODO: Track `index`
 ;; Maybe: cache indexes of newlines seen, so that we can
 ;; efficiently translate between index and line/col?
-(defrecord Token [value pos])
+#_(defrecord Token [value pos])
 
-(defn token
-  "Behaves like `p`, but wraps its return value in a `Token` record."
-  [p]
-  (with [pos pos, val p]
-    (return (Token. val pos))))
+#_(defn token
+    "Behaves like `p`, but wraps its return value in a `Token` record."
+    [p]
+    (with [pos pos, val p]
+      (return (Token. val pos))))
 
-(defn tokenizer
-  "Tokenizes the input stream using the parser `p`, skipping over tokens
+#_(defn tokenizer
+    "Tokenizes the input stream using the parser `p`, skipping over tokens
    matching `skip-p` (e.g. whitespace).  Returns a sequence of `Token`
    records."
-  [p skip-p]
-  (then (? skip-p) (sep-end-by* (token p) skip-p)))
+    [p skip-p]
+    (then (? skip-p) (sep-end-by* (token p) skip-p)))
 
-(defn embed
-  "Parses the return value of `p` using the `inner-p` parser."
-  [p inner-p]
-  (fn [state reply]
-    (detail/call p state
-                 (fn [status1 state1 value1 error1]
-                   (if (detail/ok? status1)
+#_(defn embed
+    "Parses the return value of `p` using the `inner-p` parser."
+    [p inner-p]
+    (fn [state reply]
+      (detail/call p state
+                   (fn [status1 state1 value1 error1]
+                     (if (detail/ok? status1)
                      ;; TODO: How to share position information between states?
                      ;; TODO: Share user state?
-                     (detail/call inner-p (state/of value1 nil)
-                                  (fn [status2 state2 value2 error2]
+                       (detail/call inner-p (state/of value1 nil)
+                                    (fn [status2 state2 value2 error2]
                                     ;; TODO: How do we combine errors?
                                     ;; Probably compare state indexes
-                                    (if (detail/ok? status2)
-                                      (reply :ok state1 value2 nil)
-                                      (reply status2 state2 nil error2))))
-                     (reply status1 state1 value1 error1))))))
+                                      (if (detail/ok? status2)
+                                        (reply :ok state1 value2 nil)
+                                        (reply status2 state2 nil error2))))
+                       (reply status1 state1 value1 error1))))))

@@ -2,7 +2,6 @@
   (:refer-clojure :exclude [peek re-groups])
   (:require #?@(:cljs [[goog.array :as garr]
                        [goog.string :as gstr]])
-            [paco.detail.error :as error]
             [paco.detail.position :as pos])
   #?(:clj (:import [java.util ArrayList Collections]
                    [java.util.regex Pattern])))
@@ -16,6 +15,7 @@
   (matches? [scanner pred])
   (skip! [scanner] [scanner n])
   (state [scanner])
+  (in-state? [scanner state])
   (backtrack! [scanner state]))
 
 (defprotocol ICharScanner
@@ -55,6 +55,7 @@
       (set! index* index)
       (unchecked-subtract-int index index*)))
   (state [_] index*)
+  (in-state? [_ index] (= index index*))
   (backtrack! [this index]
     (set! index* (int index))
     this)
@@ -90,7 +91,8 @@
   (StringScanner. s #?(:clj (.length s) :cljs (.-length s)) 0))
 
 (defprotocol IModCountScanner
-  (modcount [scanner]))
+  (modcount [scanner])
+  (backtrack-modified! [scanner state]))
 
 (defprotocol IUserStateScanner
   (user-state [scanner])
@@ -137,6 +139,8 @@
       k))
   (state [_]
     (ScannerState. modcount* (index scanner) user-state*))
+  (in-state? [_ state]
+    (= modcount* (.modcount ^ScannerState state)))
   (backtrack! [this state]
     (backtrack! scanner (.index ^ScannerState state))
     (set! modcount* (.modcount ^ScannerState state))
@@ -151,6 +155,11 @@
 
   IModCountScanner
   (modcount [_] modcount*)
+  (backtrack-modified! [this state]
+    (backtrack! scanner (.index ^ScannerState state))
+    (set! modcount* (unchecked-inc modcount*))
+    (set! user-state* (.user-state ^ScannerState state))
+    this)
 
   IUserStateScanner
   (user-state [_] user-state*)
@@ -236,14 +245,6 @@
                  (when line-tracking?
                    (line-tracker))
                  user-state)))
-
-(defn unexpected-error
-  ([scanner]
-   (if (end? scanner)
-     error/unexpected-end
-     (error/unexpected-input (peek scanner))))
-  ([scanner error]
-   (error/merge error (unexpected-error scanner))))
 
 (comment
   (def scanner (of "foo\nbar\n"))

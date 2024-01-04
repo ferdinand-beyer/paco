@@ -6,6 +6,15 @@
             [paco.detail.scanner :as scanner])
   #?(:cljs (:require-macros [paco.detail.parsers])))
 
+(defn pforce
+  "Forces a delayed parser `dp`."
+  [dp]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [p (force dp)]
+        (parser/apply p scanner reply)))
+    (children [_] [(force dp)])))
+
 (defn pseq
   ([ps]
    (pseq ps reply/vector-collector))
@@ -15,12 +24,12 @@
        (apply [_ scanner reply]
          (loop [i 0
                 reply (reply/collect collector reply)
-                modcount -1
+                modcount (scanner/modcount scanner)
                 error nil]
            (if (< i (count ps))
              (let [p     (get ps i)
                    reply (parser/apply p scanner reply)
-                   mcnt  (long (scanner/modcount scanner))]
+                   mcnt  (scanner/modcount scanner)]
                (if (reply/ok? reply)
                  (recur (unchecked-inc i)
                         (reply/step reply)
@@ -97,3 +106,108 @@
   {:clj-kondo/lint-as 'clojure.core/let}
   [bindings & body]
   (emit-with-seq bindings body))
+
+(defn- infinite-loop-exception [sym p scanner]
+  (ex-info (str "Parser supplied to '" sym "' succeeded without changing the parser state")
+           {:type ::infinite-loop
+            :parser p
+            :combinator sym
+            :position (scanner/position scanner)}))
+
+(defn- apply-many [sym p scanner reply]
+  (loop [reply reply
+         modcount (scanner/modcount scanner)
+         error nil]
+    (let [reply     (parser/apply p scanner reply)
+          error*    (reply/error reply)
+          modcount* (scanner/modcount scanner)]
+      (if (reply/ok? reply)
+        (if (= modcount modcount*)
+          (throw (infinite-loop-exception sym p scanner))
+          (recur (reply/step reply) modcount* error*))
+        (if (= modcount modcount*)
+          (reply/ok reply nil (error/merge error error*))
+          reply)))))
+
+(defn- apply-times [sym p n scanner reply]
+  (loop [i 0
+         reply reply
+         modcount (scanner/modcount scanner)
+         error nil]
+    (if (< i n)
+      (let [reply     (parser/apply p scanner reply)
+            error*    (reply/error reply)
+            modcount* (scanner/modcount scanner)]
+        (if (reply/ok? reply)
+          (if (= modcount modcount*)
+            (throw (infinite-loop-exception sym p scanner))
+            (recur (unchecked-inc i) (reply/step reply) modcount* error*))
+          (if (= modcount modcount*)
+            (reply/with-error reply (error/merge error error*))
+            reply)))
+      reply)))
+
+(defn- apply-max [sym p max scanner reply]
+  (loop [i 0
+         reply reply
+         modcount (scanner/modcount scanner)
+         error nil]
+    (if (< i max)
+      (let [reply     (parser/apply p scanner reply)
+            error*    (reply/error reply)
+            modcount* (scanner/modcount scanner)]
+        (if (reply/ok? reply)
+          (if (= modcount modcount*)
+            (throw (infinite-loop-exception sym p scanner))
+            (recur (unchecked-inc i) (reply/step reply) modcount* error*))
+          (if (= modcount modcount*)
+            (reply/ok reply nil (error/merge error error*))
+            reply)))
+      reply)))
+
+(defn repeat-many [sym p collector]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (->> (reply/collect collector reply)
+           (apply-many sym p scanner)
+           (reply/complete)))
+    (children [_] [p])))
+
+(defn repeat-times [sym p collector n]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (->> (reply/collect collector reply)
+           (apply-times sym p n scanner)
+           (reply/complete)))
+    (children [_] [p])))
+
+(defn repeat-min [sym p collector min]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [reply (->> reply
+                       (reply/collect collector)
+                       (apply-times sym p min scanner))]
+        (-> reply
+            (cond->> (reply/ok? reply) (apply-many sym p scanner))
+            (reply/complete))))
+    (children [_] [p])))
+
+(defn repeat-max [sym p collector max]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (->> (reply/collect collector reply)
+           (apply-max sym p max scanner)
+           (reply/complete)))
+    (children [_] [p])))
+
+(defn repeat-min-max [sym p collector min max]
+  (let [d (- max min)]
+    (reify parser/IParser
+      (apply [_ scanner reply]
+        (let [reply (->> reply
+                         (reply/collect collector)
+                         (apply-times sym p min scanner))]
+          (-> reply
+              (cond->> (reply/ok? reply) (apply-max sym p d scanner))
+              (reply/complete))))
+      (children [_] [p]))))

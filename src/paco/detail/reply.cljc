@@ -3,50 +3,30 @@
 
 (defprotocol IReplyFactory
   (ok [this value] [this value error])
-  (fail [this error])
-  ;; TODO: Find a better word for this!
-  ;; This is not fatal, but rather a "special" error that is
-  ;; not reset by `alt`, `*`, etc., but requires explicit
-  ;; recovery using `attempt` / `atomic`.
-  (fatal [this error]))
+  (fail [this error]))
 
 (defprotocol IReply
-  (status [this]) ;; TODO: Keep the status value private?
+  (ok? [this])
   (value [this])
   (error [this])
 
-  (with-status [this status])
+  (with-ok [this ok?])
   (with-value [this value])
   (with-error [this error]))
 
-(defn ok? [reply]
-  (identical? ::ok (status reply)))
-
-(defn not-ok? [reply]
-  (not (identical? ::ok (status reply))))
-
-(defn regular-fail? [reply]
-  (identical? ::fail (status reply)))
-
-(defn fatal? [reply]
-  (identical? ::fatal (status reply)))
-
-(defn with-ok [reply]
-  (with-status reply ::ok))
-
-(deftype MutableReply #?(:clj  [^:unsynchronized-mutable status*
+(deftype MutableReply #?(:clj  [^:unsynchronized-mutable ok?*
                                 ^:unsynchronized-mutable value*
                                 ^:unsynchronized-mutable error*]
-                         :cljs [^:mutable status*
+                         :cljs [^:mutable ok?*
                                 ^:mutable value*
                                 ^:mutable error*])
   IReply
-  (status [_] status*)
+  (ok? [_] ok?*)
   (value [_] value*)
   (error [_] error*)
 
-  (with-status [this status]
-    (set! status* status)
+  (with-ok [this ok?]
+    (set! ok?* ok?)
     this)
   (with-value [this value]
     (set! value* value)
@@ -57,28 +37,23 @@
 
   IReplyFactory
   (ok [this value]
-    (set! status* ::ok)
+    (set! ok?* true)
     (set! value* value)
     (set! error* nil)
     this)
   (ok [this value error]
-    (set! status* ::ok)
+    (set! ok?* true)
     (set! value* value)
     (set! error* error)
     this)
   (fail [this error]
-    (set! status* ::fail)
-    (set! value* nil)
-    (set! error* error)
-    this)
-  (fatal [this error]
-    (set! status* ::fatal)
+    (set! ok?* false)
     (set! value* nil)
     (set! error* error)
     this))
 
 (defn mutable-reply []
-  (MutableReply. ::ok nil nil))
+  (MutableReply. true nil nil))
 
 (defprotocol ICollector
   (reducing-fn [this])
@@ -104,18 +79,18 @@
 (deftype CollectorReply #?(:clj [collector rf
                                  ^:unsynchronized-mutable reply*
                                  ^:unsynchronized-mutable acc*
-                                 ^:unsynchronized-mutable level*]
+                                 ^:unsynchronized-mutable ^long level*]
                            :cljs [collector rf
                                   ^:mutable reply*
                                   ^:mutable acc*
-                                  ^:mutable level*])
+                                  ^:mutable ^number level*])
   IReply
-  (status [_] (status reply*))
+  (ok? [_] (ok? reply*))
   (value [_] (value reply*))
   (error [_] (error reply*))
 
-  (with-status [this status]
-    (set! reply* (with-status reply* status))
+  (with-ok [this ok?]
+    (set! reply* (with-ok reply* ok?))
     this)
   (with-value [this value]
     (set! reply* (with-value reply* value))
@@ -134,9 +109,6 @@
   (fail [this error]
     (set! reply* (fail reply* error))
     this)
-  (fatal [this error]
-    (set! reply* (fatal reply* error))
-    this)
 
   ICollectorReply
   (step [this]
@@ -144,21 +116,22 @@
       ;; At the end of a nested accumulator, we will be called in the sequence
       ;; (step) (complete) (step), so we need to make sure not to reduce the
       ;; value twice.
-      (when-not (= ::none v)
-        (set! acc* (rf acc* v))
-        (set! reply* (with-value reply* ::none))))
+      (when-not (= ::complete v)
+        (set! acc* (rf acc* v))))
     this)
   (complete [this]
     (if (zero? level*)
       ;; We are the root: Report the accumulated result to the parent reply.
       ;; This object can now be disposed/reused.
-      (with-value reply* (rf acc*))
+      (cond-> reply* (ok? reply*) (with-value (rf acc*)))
       ;; The child reduction is complete.
-      (do (set! level* (dec level*))
-          this)))
+      (do
+        (set! reply* (with-value reply* ::complete))
+        (set! level* (unchecked-dec level*))
+        this)))
   (-collector [_] collector)
   (-nested [this]
-    (set! level* (inc level*))
+    (set! level* (unchecked-inc level*))
     this))
 
 ;; ? Merge this with `collect`?
@@ -171,7 +144,7 @@
    into a single value."
   [collector reply]
   (if (and (satisfies? ICollectorReply reply)
-           (flatten? collector (-collector reply)))
+           (flatten? (-collector reply) collector))
     (-nested reply)
     (collector-reply collector reply)))
 
@@ -199,10 +172,15 @@
     (flatten? [this other]
       (identical? this other))))
 
+(defn- seqex-rf
+  ([]      (transient []))
+  ([acc]   (persistent! acc))
+  ([acc x] (cond-> acc (some? x) (conj! x))))
+
 (def seqex-collector
   "A collector for sequence expressions, flattening nested seqex operators."
   (reify ICollector
-    (reducing-fn [_] vector-rf)
+    (reducing-fn [_] seqex-rf)
     (flatten? [this other]
       (identical? this other))))
 

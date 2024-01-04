@@ -1,27 +1,23 @@
 (ns paco.helper
-  (:require [paco.detail :as detail]
+  (:require [paco.core :as p]
             [paco.detail.error :as error]
-            [paco.state :as state]))
-
-(defn- reply-fn [initial-state]
-  (fn [status state value error]
-    {:status   status
-     :ok?      (detail/ok? status)
-     :fail?    (detail/fail? status)
-     :changed? (not (detail/same-state? state initial-state))
-     :state    state
-     :value    value
-     :error    error
-     :messages (error/message-set error)}))
+            [paco.detail.parser :as parser]
+            [paco.detail.reply :as reply]
+            [paco.detail.scanner :as scanner]))
 
 (defn run
   ([p]
    (run p ""))
   ([p input]
-   (let [state (state/of input nil)]
-     (detail/run-parser p state (reply-fn state)))))
+   (let [scanner  (scanner/of input)
+         modcount (scanner/modcount scanner)
+         reply    (parser/apply p scanner (reply/mutable-reply))]
+     {:ok?      (reply/ok? reply)
+      :fail?    (not (reply/ok? reply))
+      :value    (reply/value reply)
+      :error    (reply/error reply)
+      :messages (error/message-set (reply/error reply))
+      :index    (scanner/index scanner)
+      :changed? (not= modcount (scanner/modcount scanner))})))
 
-(defn any [state reply]
-  (if-let [token (state/peek state)]
-    (reply :ok (state/skip state) token nil)
-    (reply :error state nil error/unexpected-end)))
+(def any p/any-token)
