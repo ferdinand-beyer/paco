@@ -25,7 +25,7 @@
 (defn not-ok? [reply]
   (not (identical? ::ok (status reply))))
 
-(defn failed? [reply]
+(defn regular-fail? [reply]
   (identical? ::fail (status reply)))
 
 (defn fatal? [reply]
@@ -88,12 +88,12 @@
   ([rf]
    (collector rf nil))
   ([rf flatten?]
-   (let [flatten? (if (ifn? flatten?)
-                    flatten?
-                    (constantly flatten?))]
+   (let [flatten?* (if (ifn? flatten?)
+                     flatten?
+                     (constantly flatten?))]
      (reify ICollector
        (reducing-fn [_] rf)
-       (flatten? [_ other] (flatten? other))))))
+       (flatten? [_ other] (flatten?* other))))))
 
 (defprotocol ICollectorReply
   (step [this] "Folds the reply value into the accumulated result.")
@@ -179,15 +179,30 @@
   "A collector that discards all values and returns `nil`."
   (collector (constantly nil) (constantly true)))
 
+(defn- vector-rf
+  ([]      (transient []))
+  ([acc]   (persistent! acc))
+  ([acc x] (conj! acc x)))
+
+(def vector-collector
+  (collector vector-rf))
+
+(def first-collector
+  (reify ICollector
+    (reducing-fn [_] rfs/rfirst)
+    (flatten? [this other]
+      (identical? this other))))
+
+(def last-collector
+  (reify ICollector
+    (reducing-fn [_] rfs/rlast)
+    (flatten? [this other]
+      (identical? this other))))
+
 (def seqex-collector
   "A collector for sequence expressions, flattening nested seqex operators."
   (reify ICollector
-    (reducing-fn [_]
-      (fn
-        ([]      (transient []))
-        ([acc]   (persistent! acc))
-        ([acc x] (conj! acc x))))
-    ;; ? Reuse for `first` and `last`?
+    (reducing-fn [_] vector-rf)
     (flatten? [this other]
       (identical? this other))))
 

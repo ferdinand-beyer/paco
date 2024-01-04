@@ -2,6 +2,7 @@
   (:refer-clojure :exclude [peek re-groups])
   (:require #?@(:cljs [[goog.array :as garr]
                        [goog.string :as gstr]])
+            [paco.detail.error :as error]
             [paco.detail.position :as pos])
   #?(:clj (:import [java.util ArrayList Collections]
                    [java.util.regex Pattern])))
@@ -149,7 +150,7 @@
   (re-match [_ re] (re-match scanner re))
 
   IModCountScanner
-  (modcount [_] (modcount scanner))
+  (modcount [_] modcount*)
 
   IUserStateScanner
   (user-state [_] user-state*)
@@ -235,6 +236,14 @@
                  (when line-tracking?
                    (line-tracker))
                  user-state)))
+
+(defn unexpected-error
+  ([scanner]
+   (if (end? scanner)
+     error/unexpected-end
+     (error/unexpected-input (peek scanner))))
+  ([scanner error]
+   (error/merge error (unexpected-error scanner))))
 
 (comment
   (def scanner (of "foo\nbar\n"))
