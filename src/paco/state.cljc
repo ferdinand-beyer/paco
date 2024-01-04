@@ -1,7 +1,7 @@
 (ns paco.state
   (:refer-clojure :exclude [peek])
   (:require #?(:cljs [goog.string :as gstr])
-            [paco.pos :as pos]))
+            [paco.detail.position :as pos]))
 
 #?(:clj (set! *warn-on-reflection* true))
 

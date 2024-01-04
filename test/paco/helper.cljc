@@ -1,6 +1,6 @@
 (ns paco.helper
   (:require [paco.detail :as detail]
-            [paco.error :as error]
+            [paco.detail.error :as error]
             [paco.state :as state]))
 
 (defn- reply-fn [initial-state]

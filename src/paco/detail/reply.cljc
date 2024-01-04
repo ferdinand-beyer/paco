@@ -11,7 +11,7 @@
   (fatal [this error]))
 
 (defprotocol IReply
-  (status [this])
+  (status [this]) ;; TODO: Keep the status value private?
   (value [this])
   (error [this])
 
@@ -25,8 +25,8 @@
 (defn not-ok? [reply]
   (not (identical? ::ok (status reply))))
 
-(defn error? [reply]
-  (identical? ::error (status reply)))
+(defn failed? [reply]
+  (identical? ::fail (status reply)))
 
 (defn fatal? [reply]
   (identical? ::fatal (status reply)))
@@ -67,7 +67,7 @@
     (set! error* error)
     this)
   (fail [this error]
-    (set! status* ::error)
+    (set! status* ::fail)
     (set! value* nil)
     (set! error* error)
     this)

@@ -1,7 +1,7 @@
 (ns user
   (:require [clojure.tools.namespace.repl :as repl]
             [criterium.core :as criterium]
-            [paco.chars :as c]
+            [paco.char :as c]
             [paco.core :as p]))
 
 (comment

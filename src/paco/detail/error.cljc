@@ -1,7 +1,7 @@
-(ns paco.error
+(ns paco.detail.error
   (:refer-clojure :exclude [merge])
   (:require [clojure.string :as str]
-            [paco.pos :as pos]
+            [paco.detail.position :as pos]
             [paco.state :as state])
   (:import #?(:clj [java.io StringWriter]
               :cljs [goog.string StringBuffer])))
@@ -202,7 +202,7 @@
                    (write! writer " could not be parsed because: ")))
     (write-messages! error writer pos opts))
   (-compare-msgs [_ other]
-    (let [dpos (compare pos (.-pos ^Nested other))]
+    (let [dpos (pos/compare pos (.-pos ^Nested other))]
       (if (zero? dpos)
         (let [dlabel (compare label (.-label ^Nested other))]
           (if (zero? dlabel)

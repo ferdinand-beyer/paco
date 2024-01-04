@@ -1,10 +1,10 @@
-(ns paco.chars
+(ns paco.char
   (:refer-clojure :exclude [char newline])
   (:require [paco.core :as p]
             [paco.detail :as detail]
-            [paco.error :as error]
+            [paco.detail.error :as error]
             [paco.state :as state])
-  #?(:cljs (:require-macros [paco.chars :refer [test-ranges]])))
+  #?(:cljs (:require-macros [paco.char :refer [test-ranges]])))
 
 ;;---------------------------------------------------------
 ;; Character predicates

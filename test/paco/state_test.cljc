@@ -1,6 +1,6 @@
 (ns paco.state-test
   (:require [clojure.test :refer [deftest is testing]]
-            [paco.pos :as pos]
+            [paco.detail.position :as pos]
             [paco.state :as state]))
 
 (deftest string-navigation-test

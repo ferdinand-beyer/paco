@@ -1,8 +1,8 @@
 (ns examples.json
   (:refer-clojure :exclude [array])
-  (:require [paco.core :as p]
-            [paco.chars :as c]
-            [clojure.string :as str])
+  (:require [clojure.string :as str]
+            [paco.char :as c]
+            [paco.core :as p])
   #?(:clj (:import [clojure.lang MapEntry])))
 
 ;; TODO: skip-match

@@ -1,8 +1,8 @@
 (ns bench.showdown
   (:require [blancas.kern.core :as k]
-            [paco.chars :as c]
-            [paco.core :as p]
             [criterium.core :as criterium]
+            [paco.char :as c]
+            [paco.core :as p]
             [strojure.parsesso.char :as qc]
             [strojure.parsesso.parser :as q]
             [the.parsatron :as t]))

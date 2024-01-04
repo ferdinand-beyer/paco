@@ -1,10 +1,10 @@
-(ns paco.detail.adv
+(ns paco.detail.parsers
   "Advanced low-level parsers, used by higher level ones."
-  (:require [paco.detail.parser :as parser]
+  (:require [paco.detail.error :as error]
+            [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
-            [paco.detail.scanner :as scanner]
-            [paco.error :as error])
-  #?(:cljs (:require-macros [paco.detail.adv :refer [with-seq]])))
+            [paco.detail.scanner :as scanner])
+  #?(:cljs (:require-macros [paco.detail.parsers :refer [with-seq]])))
 
 (defn- emit-apply-seq
   "Emits code that will apply the parsers `ps` in sequence

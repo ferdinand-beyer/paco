@@ -2,7 +2,7 @@
   (:refer-clojure :exclude [peek])
   (:require #?@(:cljs [[goog.array :as garr]
                        [goog.string :as gstr]])
-            [paco.pos :as pos])
+            [paco.detail.position :as pos])
   #?(:clj (:import [java.util ArrayList Collections]
                    [java.util.regex Pattern])))
 
@@ -204,13 +204,11 @@
       (if (< i -1)
         (let [line (-> i unchecked-negate-int unchecked-dec-int)
               k    (unchecked-dec-int line)]
-          (pos/pos line
-                   (unchecked-subtract-int index
-                                           #?(:clj  (.get starts k)
-                                              :cljs (aget starts k)))))
+          (pos/position line (unchecked-subtract-int index #?(:clj  (.get starts k)
+                                                              :cljs (aget starts k)))))
         (if (>= i 0)
-          (pos/pos (unchecked-inc-int i) 0)
-          (pos/pos 0 index))))))
+          (pos/position (unchecked-inc-int i) 0)
+          (pos/position 0 index))))))
 
 (defn- line-tracker []
   (LineTracker. #?(:clj (ArrayList.) :cljs #js []) -1))

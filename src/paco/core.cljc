@@ -1,7 +1,7 @@
 (ns paco.core
   (:refer-clojure :exclude [* + cat max min not-empty ref repeat sequence])
   (:require [paco.detail :as detail]
-            [paco.error :as error]
+            [paco.detail.error :as error]
             [paco.state :as state])
   #?(:cljs (:require-macros [paco.core :refer [pipe-parser]])))
 

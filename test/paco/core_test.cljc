@@ -1,11 +1,11 @@
 (ns paco.core-test
   (:require [clojure.test :refer [deftest is testing]]
-            [paco.chars :as c]
+            [paco.char :as c]
             [paco.core :as p]
             [paco.detail :as detail]
-            [paco.error :as error]
-            [paco.helper :as helper]
-            [paco.pos :as pos])
+            [paco.detail.error :as error]
+            [paco.detail.position :as pos]
+            [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
 (deftest pnil-test
@@ -667,8 +667,8 @@
   (is (= 3 (p/parse (p/then (p/repeat helper/any 3) p/index) "abcdef"))))
 
 (deftest pos-test
-  (is (= (pos/pos 0 0) (p/parse p/pos "")))
-  (is (= (pos/pos 1 2) (p/parse (p/then (p/repeat c/any-char 6) p/pos) "abc\ndef"))))
+  (is (= (pos/position 0 0) (p/parse p/pos "")))
+  (is (= (pos/position 1 2) (p/parse (p/then (p/repeat c/any-char 6) p/pos) "abc\ndef"))))
 
 (deftest user-state-test
   (let [p (p/then (p/set-user-state {})

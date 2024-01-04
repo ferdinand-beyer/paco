@@ -1,5 +1,5 @@
 (ns paco.detail
-  (:require [paco.error :as error]
+  (:require [paco.detail.error :as error]
             [paco.state :as state])
   #?(:cljs (:require-macros [paco.detail :refer [call same-state? thunk]]))
   #?(:cljs (:import [goog.string StringBuffer])))
