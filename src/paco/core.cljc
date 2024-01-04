@@ -2,82 +2,95 @@
   (:refer-clojure :exclude [* + cat max min not-empty ref repeat sequence])
   (:require [paco.detail :as detail]
             [paco.detail.error :as error]
-            [paco.state :as state])
-  #?(:cljs (:require-macros [paco.core :refer [pipe-parser]])))
+            [paco.detail.parser :as parser]
+            [paco.detail.parsers :as dp]
+            [paco.detail.reply :as reply]
+            [paco.detail.scanner :as scanner]
+            [paco.state :as state]))
 
-(defn- result [status state value error]
-  {:status   status
-   :value    value
-   :position (state/pos state)
-   :user     (state/user-state state)
-   :messages (error/sort-messages error)})
-
-(defn- parser-exception [status state value error]
-  (let [result (result status state value error)]
-    (ex-info (error/string error (:position result))
-             (assoc result :type ::parse-error))))
+(defn- result-data [scanner reply]
+  {:status     (reply/status reply)
+   :value      (reply/value reply)
+   :error      (reply/error reply)
+   :position   (scanner/position scanner)
+   :user-state (scanner/user-state scanner)})
 
 (defn run [p input & {:as opts}]
-  (detail/run-parser p (state/of input opts) result))
+  (let [scanner (scanner/of input opts)
+        reply   (parser/apply p scanner (reply/mutable-reply))]
+    (result-data scanner reply)))
+
+(defn- parse-exception [scanner reply]
+  (let [{:keys [error position] :as data} (result-data scanner reply)]
+    (ex-info (error/string error position)
+             (assoc data :type ::parse-error))))
 
 (defn parse [p input & {:as opts}]
-  (letfn [(reply [status state value error]
-            (if (detail/ok? status)
-              value
-              (throw (parser-exception status state value error))))]
-    (detail/run-parser p (state/of input opts) reply)))
+  (let [scanner (scanner/of input opts)
+        reply   (parser/apply p scanner (reply/mutable-reply))]
+    (if (reply/ok? reply)
+      (reply/value reply)
+      (throw (parse-exception scanner reply)))))
 
 ;;---------------------------------------------------------
+
+(defn any-token [scanner reply]
+  (if-some [token (scanner/peek scanner)]
+    (do
+      (scanner/skip! scanner)
+      (reply/ok reply token))
+    (reply/fail reply (scanner/unexpected-error scanner))))
 
 ;; fparsec: preturn, >>%
 (defn return
   ([x]
-   (fn [state reply]
-     (reply :ok state x nil)))
+   (fn [_scanner reply]
+     (reply/ok reply x)))
   ([p x]
-   (fn [state reply]
-     (detail/call p state (fn [status state _value error]
-                            (reply status state x error))))))
+   (reify parser/IParser
+     (apply [_ scanner reply]
+       (reply/with-value (parser/apply p scanner reply) x))
+     (children [_] [p]))))
 
 ;; fparsec: pzero, but fails
-(defn pnil
+(def pnil
   "This parser always succeeds and returns `nil`."
-  [state reply]
-  (reply :ok state nil nil))
+  (return nil))
 
 (defn end
   "This parser succeeds a the end of the input stream."
-  [state reply]
-  (if (state/at-end? state)
-    (reply :ok state nil nil)
-    (reply :error state nil error/expected-end)))
+  [scanner reply]
+  (if (scanner/end? scanner)
+    (reply/ok reply nil)
+    (reply/fail reply error/expected-end)))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping
 
 (defn bind [p f]
-  (fn [state reply]
-    (detail/call p state
-                 (fn [status1 state1 value1 error1]
-                   (if (detail/ok? status1)
-                     (let [p2 (f value1)]
-                       (if (nil? error1)
-                         (detail/call p2 state1 reply)
-                         (detail/call p2 state1
-                                      (fn [status2 state2 value2 error2]
-                                        (if (detail/same-state? state1 state2)
-                                          (reply status2 state2 value2 (error/merge error1 error2))
-                                          (reply status2 state2 value2 error2))))))
-                     (reply status1 state1 value1 error1))))))
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [reply (parser/apply p scanner reply)]
+        (if (reply/ok? reply)
+          (let [p2 (f (reply/value reply))]
+            (if-some [error (reply/error reply)]
+              (let [modcount (scanner/modcount scanner)
+                    reply    (parser/apply p2 scanner reply)]
+                (if (= modcount (scanner/modcount scanner))
+                  (reply/with-error reply (error/merge error (reply/error error)))
+                  reply))
+              (parser/apply p2 scanner reply)))
+          reply)))
+    (children [_] [p])))
 
 (defn- emit-with [bindings body]
   (let [[binding p] (take 2 bindings)]
     (if (= 2 (count bindings))
-      ;; TODO Emit "do" body?
+      ;; ? emit "then" body?
       `(bind ~p (fn [~binding] ~@body))
       `(bind ~p (fn [~binding] ~(emit-with (drop 2 bindings) body))))))
 
-;; TODO: Rename to `let`?
+;; ? rename to `let`?
 ;; alternative names: let-then, let-chain, let-seq, plet
 (defmacro with
   {:clj-kondo/lint-as 'clojure.core/let
@@ -88,64 +101,25 @@
          (some? body)]}
   (emit-with bindings body))
 
-(defn- emit-pipe-body
-  [f ps prev-state prev-reply prev-values prev-error]
-  (let [depth    (inc (count prev-values))
-        make-sym (fn [prefix] (symbol (str prefix depth)))
-        status   (make-sym "status")
-        state    (make-sym "state")
-        value    (make-sym "value")
-        error    (make-sym "error")
-        e        (make-sym "e")
-        values   (conj prev-values value)
-        next-ps  (next ps)]
-    `(detail/call ~(first ps) ~prev-state
-                  (fn [~status ~state ~value ~error]
-                    (let [~e ~(if prev-error
-                                `(detail/merge-errors ~error ~state ~prev-error ~prev-state)
-                                error)]
-                      ~(if next-ps
-                         (list `if (list `detail/ok? status)
-                               (emit-pipe-body f next-ps state prev-reply values e)
-                               (list prev-reply status state value e))
-                         (list prev-reply status state
-                               `(when (detail/ok? ~status)
-                                  ~(cons f values))
-                               e)))))))
-
-(defn- emit-pipe-parser [ps f]
-  (list `fn (symbol (str "pipe" (count ps))) '[state reply]
-        (emit-pipe-body f ps 'state 'reply [] nil)))
-
-(defmacro ^:private pipe-parser [& ps+f]
-  (emit-pipe-parser (butlast ps+f) (last ps+f)))
-
-(comment
-  (emit-pipe-parser '[p1] 'f)
-  (emit-pipe-parser '[p1 p2] 'f)
-  (emit-pipe-parser '[p1 p2 p3] 'f)
-  ;;
-  )
-
 ;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
 (defn pipe
   ([p f]
-   (pipe-parser p f))
+   (dp/with-seq [x p] (f x)))
   ([p1 p2 f]
-   (pipe-parser p1 p2 f))
+   (dp/with-seq [x p1, y p2] (f x y)))
   ([p1 p2 p3 f]
-   (pipe-parser p1 p2 p3 f))
+   (dp/with-seq [x p1, y p2, z p3] (f x y z)))
   ([p1 p2 p3 p4 & more]
    (let [ps (list* p1 p2 p3 p4 (butlast more))
          f  (last more)]
-     (detail/reduce-sequence (completing conj #(apply f %)) ps))))
+     (dp/pseq ps (reply/collector (completing conj #(apply f %)))))))
 
 ;; alternative names: pseq, sq, tup (tuple), grp (group), group-all
 (defn sequence
   "Applies the parsers `ps` in sequence and returns a collection of
    their return values."
   [ps]
-  (detail/reduce-sequence detail/vector-rf ps))
+  (dp/pseq ps))
 
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 ;; alternative names: tuple
@@ -162,14 +136,24 @@
 ;; parsesso: after
 (defn then
   "Applies the parsers in sequence and returns the result of the last one."
-  [p & ps]
-  (detail/reduce-sequence detail/last-rf (cons p ps)))
+  ([p] p)
+  ([p1 p2]
+   (dp/with-seq [x p1, _ p2] x))
+  ([p1 p2 p3]
+   (dp/with-seq [x p1, _ p2, _ p3] x))
+  ([p1 p2 p3 p4 & more]
+   (dp/pseq (list* p1 p2 p3 p4 more) reply/first-collector)))
 
 ;; fparsec: .>>
 (defn then-skip
   "Applies the parsers in sequence and returns the result of the first one."
-  [p & ps]
-  (detail/reduce-sequence detail/first-rf (cons p ps)))
+  ([p] p)
+  ([p1 p2]
+   (dp/with-seq [_ p1, x p2] x))
+  ([p1 p2 p3]
+   (dp/with-seq [_ p1, _ p2, x p3] x))
+  ([p1 p2 p3 p4 & more]
+   (dp/pseq (list* p1 p2 p3 p4 more) reply/last-collector)))
 
 ;; fparsetc: .>>.: like (cat p1 p2)
 
@@ -177,7 +161,7 @@
   ([p psurround]
    (between p psurround psurround))
   ([p popen pclose]
-   (pipe popen p pclose (fn [_ x _] x))))
+   (dp/with-seq [_ popen, x p, _ pclose] x)))
 
 ;;---------------------------------------------------------
 ;; Parsing alternatives and recovering from errors
