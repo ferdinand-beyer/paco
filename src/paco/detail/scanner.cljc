@@ -1,5 +1,5 @@
 (ns paco.detail.scanner
-  (:refer-clojure :exclude [peek])
+  (:refer-clojure :exclude [peek re-groups])
   (:require #?@(:cljs [[goog.array :as garr]
                        [goog.string :as gstr]])
             [paco.detail.position :as pos])
@@ -19,32 +19,40 @@
 
 (defprotocol ICharScanner
   (peek-str [scanner n])
-  (str-matches? [scanner s])
-  (str-matches-ci? [scanner s])
+  (matches-str? [scanner s])
+  (matches-str-ci? [scanner s])
   (re-match [scanner re]))
 
+(defn re-groups [scanner re]
+  (when-let [m (re-match scanner re)]
+    #?(:clj  (clojure.core/re-groups m)
+       :cljs (if (== (.-length m) 1)
+               (aget m 0)
+               (vec m)))))
+
 (deftype StringScanner #?(:clj  [^String input
+                                 ^int end
                                  ^:unsynchronized-mutable ^int index*]
                           :cljs [^string input
+                                 ^number end
                                  ^:mutable ^number index*])
   IScanner
   (index [_] index*)
-  (end? [_] (>= index* (.length input)))
+  (end? [_] (>= index* end))
   (peek [_]
-    (when (< index* (.length input))
+    (when (< index* end)
       (.charAt input index*)))
   (matches? [_ pred]
-    (when (< index* (.length input))
+    (when (< index* end)
       (pred (.charAt input index*))))
   (skip! [_]
-    (if (< index* (.length input))
+    (if (< index* end)
       (do (set! index* (unchecked-inc-int index*)) 1)
       0))
   (skip! [_ n]
-    (let [index (Math/min (unchecked-add-int index* (int n)) (.length input))
-          k     (unchecked-subtract-int index index*)]
+    (let [index (Math/min (unchecked-add-int index* (int n)) end)]
       (set! index* index)
-      k))
+      (unchecked-subtract-int index index*)))
   (state [_] index*)
   (backtrack! [this index]
     (set! index* (int index))
@@ -52,27 +60,33 @@
 
   ICharScanner
   (peek-str [_ n]
-    (when (< index* (.length input))
-      (.substring input index* (Math/min (unchecked-add-int index* (int n)) (.length input)))))
-  (str-matches? [_ s]
+    (when (< index* end)
+      (.substring input index* (Math/min (unchecked-add-int index* (int n)) end))))
+  (matches-str? [_ s]
     #?(:clj  (.regionMatches input index* s 0 (.length ^String s))
        :cljs (let [e (unchecked-add-int index* (.-length s))]
-               (and (< e (.length input)) (= (.substring input index* e) s)))))
-  (str-matches-ci? [_ s]
+               (and (<= e end) (= (.substring input index* e) s)))))
+  (matches-str-ci? [_ s]
     #?(:clj  (.regionMatches input true index* s 0 (.length ^String s))
        :cljs (let [e (unchecked-add-int index* (.-length s))]
-               (and (<= e (.length input))
+               (and (<= e end)
                     (gstr/caseInsensitiveEquals (.substring input index* e) s)))))
   (re-match [_ re]
-    (when (< index* (.length input))
+    (when (< index* end)
       #?(:clj (let [m (.. ^Pattern re (matcher input)
-                          (region index* (.length input)))]
+                          (region index* end)
+                          ;; Don't match ^, for compatibility with JavaScript.
+                          (useAnchoringBounds false))]
                 (when (.lookingAt m)
                   m))
-         :cljs (re-matches re (.substring input 0))))))
+         :cljs (let [re* (if (and (.-sticky re) (not (.-global re)))
+                           re
+                           (js/RegExp. re (.. re -flags (replace #"[gy]" "") (concat "y"))))]
+                 (set! (.-lastIndex re*) index*)
+                 (.exec re* input))))))
 
 (defn- string-scanner [^String s]
-  (StringScanner. s 0))
+  (StringScanner. s #?(:clj (.length s) :cljs (.-length s)) 0))
 
 (defprotocol IModCountScanner
   (modcount [scanner]))
@@ -130,8 +144,8 @@
 
   ICharScanner
   (peek-str [_ n] (peek-str scanner n))
-  (str-matches? [_ s] (str-matches? scanner s))
-  (str-matches-ci? [_ s] (str-matches-ci? scanner s))
+  (matches-str? [_ s] (matches-str? scanner s))
+  (matches-str-ci? [_ s] (matches-str-ci? scanner s))
   (re-match [_ re] (re-match scanner re))
 
   IModCountScanner
