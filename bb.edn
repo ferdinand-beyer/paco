@@ -1,4 +1,5 @@
 {:deps {com.fbeyer/paco {:local/root "."}}
+ :pods {clj-kondo/clj-kondo {:version "2023.12.15"}}
  :tasks {test (run '-test:all #_{:parallel true})
          -test:all {:depends [test:clj test:cljs test:bb]}
 
@@ -23,7 +24,24 @@
                           (println "Running Babashka tests...")
                           (kaocha.runner/-main "unit"))}
 
+         clj-kondo:init {:requires ([babashka.fs :as fs]
+                                    [pod.borkdude.clj-kondo :as clj-kondo])
+                         :task (let [opts {:cache true
+                                           :copy-configs true
+                                           :dependencies true
+                                           :lint (->> (clojure "-A:bench:build:dev:kaocha:test" "-Spath")
+                                                      with-out-str
+                                                      fs/split-paths
+                                                      (into [] (map str)))
+                                           :parallel true}]
+                                 (clj-kondo/print! (clj-kondo/run! opts)))}
+
          check (run '-check:all #_{:parallel true})
-         -check:all {:depends [check:eastwood]}
+         -check:all {:depends [check:clj-kondo check:eastwood]}
+
+         check:clj-kondo {:requires ([pod.borkdude.clj-kondo :as clj-kondo])
+                          :task (do
+                                  (println "== clj-kondo ==")
+                                  (clj-kondo/print! (clj-kondo/run! {:lint ["src"]})))}
 
          check:eastwood (clojure "-M:eastwood")}}

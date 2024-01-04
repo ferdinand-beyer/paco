@@ -1,8 +1,10 @@
 .cache/
-.clj-kondo/com.fbeyer/paco/
+.clj-kondo/
 .cpcache/
 .portal/
 node_modules/
 target/
 .eastwood
 .nrepl-port
+
+!.clj-kondo/config.edn
