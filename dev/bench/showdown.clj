@@ -383,7 +383,7 @@
 ;;,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 
 (bench-paco (p/then (c/string "<!--")
-                    (p/till* c/any-char (c/string "-->")))
+                    (p/*until c/any-char (c/string "-->")))
             "<!-- comment -->")
 ;           Execution time mean : 690,594495 ns
 ;  Execution time std-deviation : 91,717260 ns

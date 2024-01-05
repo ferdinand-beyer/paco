@@ -7,15 +7,6 @@
             [paco.detail.scanner :as scanner])
   #?(:cljs (:require-macros [paco.detail.parsers])))
 
-(defn pforce
-  "Forces a delayed parser `dp`."
-  [dp]
-  (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [p (force dp)]
-        (parser/apply p scanner reply)))
-    (children [_] [(force dp)])))
-
 (defn pseq
   ([ps]
    (pseq ps rfs/rvec))
@@ -46,11 +37,11 @@
 
 (defn- emit-apply-seq
   "Emits code that will apply the parsers `ps` in sequence
-   and evaluate `body` with the binding forms `bfs` bound
-   to the parser return values."
-  ([ps scanner reply bfs body]
-   (emit-apply-seq ps scanner reply bfs body -1 [] nil))
-  ([ps scanner reply bfs body modcount values error]
+   and evaluate `body` with the `binding-forms` bound to the
+   parser return values."
+  ([ps scanner reply binding-forms body]
+   (emit-apply-seq ps scanner reply binding-forms body -1 [] nil))
+  ([ps scanner reply binding-forms body modcount values error]
    {:pre [(seq ps) (symbol? scanner) (symbol? reply)]}
    (let [depth     (inc (count values))
          modcount* (symbol (str "modcount" depth))
@@ -63,15 +54,16 @@
              `(let [~value* (reply/value ~reply)
                     ~error* (reply/error ~reply)
                     ~modcount* (scanner/modcount ~scanner)]
-                ~(emit-apply-seq next-ps scanner reply bfs body
-                                 modcount* (conj values value*)
+                ~(emit-apply-seq next-ps scanner reply binding-forms body
+                                 modcount*
+                                 (conj values value*)
                                  (if error
                                    `(if (= ~modcount ~modcount*)
                                       (error/merge ~error ~error*)
                                       ~error*)
                                    error*)))
              ;; this was the last parser
-             (let [bindings (interleave bfs (conj values `(reply/value ~reply)))]
+             (let [bindings (interleave binding-forms (conj values `(reply/value ~reply)))]
                (if error
                  `(let [result# (let [~@bindings] ~@body)
                         ~error* (reply/error ~reply)]
@@ -112,6 +104,9 @@
             :parser p
             :combinator sym
             :position (scanner/position scanner)}))
+
+;;---------------------------------------------------------
+;; Repeat parsers
 
 (defn- apply-many [sym p rf scanner reply result]
   (loop [result result
@@ -167,6 +162,13 @@
             reply)))
       (reply/ok reply result error))))
 
+;; Similar to fparsec's Inline.Many:
+;; - stateFromFirstElement ~= (rf)
+;; - foldState = (rf result value)
+;; - resultFromState = (rf result)
+;; - elementParser = p
+;; - firstElementParser n/a
+;; - resultForEmptySequence: n/a
 (defn repeat-many [sym p rf]
   (reify parser/IParser
     (apply [_ scanner reply]
@@ -214,6 +216,10 @@
             reply)))
       (children [_] [p]))))
 
+;;---------------------------------------------------------
+;; Separated-by
+
+;; Similar to fparsec's Inline.SepBy
 ;; ? Add include-sep? option
 (defn sep [sym p psep rf empty-ok? sep-end-ok?]
   (reify parser/IParser
@@ -269,6 +275,9 @@
             (reply/ok reply (rf result) (reply/error reply))
             reply))))
     (children [_] [p psep])))
+
+;;---------------------------------------------------------
+;; Until
 
 (defn until
   [sym p pend rf empty-ok? include-end?]

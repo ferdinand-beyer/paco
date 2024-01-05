@@ -164,7 +164,7 @@
            "foox")
 
   (p/parse (-> (c/char \a)
-               (p/skip*)
+               (p/*skip)
                (p/cat (c/char \b))
                (p/pipe first))
            "aaaaaaaaaab")

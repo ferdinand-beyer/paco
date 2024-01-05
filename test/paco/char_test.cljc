@@ -158,13 +158,13 @@
                         "foobar and barfoo"))))
 
 (deftest str*-test
-  (is (= "" (p/parse (c/str* (c/string "foo")) "bar")))
-  (is (= "fb" (p/parse (c/str* (p/alt (c/string-return "foo" \f)
+  (is (= "" (p/parse (c/*str (c/string "foo")) "bar")))
+  (is (= "fb" (p/parse (c/*str (p/alt (c/string-return "foo" \f)
                                       (c/string-return "bar" "b")))
                        "foobar"))))
 
 (deftest str+-test
-  (is (= "fb" (p/parse (c/str+ (p/alt (c/string-return "foo" \f)
+  (is (= "fb" (p/parse (c/+str (p/alt (c/string-return "foo" \f)
                                       (c/string-return "bar" "b")))
                        "foobar"))))
 

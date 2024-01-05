@@ -100,12 +100,11 @@
 (defn- emit-with [bindings body]
   (let [[binding p] (take 2 bindings)]
     (if (= 2 (count bindings))
-      ;; ? emit "then" body?
       `(bind ~p (fn [~binding] ~@body))
       `(bind ~p (fn [~binding] ~(emit-with (drop 2 bindings) body))))))
 
 ;; ? rename to `let`?
-;; alternative names: let-then, let-chain, let-seq, plet
+;; alternative names: let-bind,  plet
 (defmacro with
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
@@ -187,6 +186,7 @@
       (reply/fail reply error))))
 
 ;; fparsec: <?>
+;; alternate name: label
 (defn as
   "If `p` does not change the parser state, the errors are
    replaced with `(expected label)."
@@ -419,14 +419,12 @@
   (dp/repeat-min `+ p rfs/seqex 1))
 
 ;; fparsec: skipMany
-;; or: *skip
-(defn skip* [p]
-  (dp/repeat-many `skip* p rfs/ignore))
+(defn *skip [p]
+  (dp/repeat-many `*skip p rfs/ignore))
 
 ;; fparsec: skipMany1
-;; or: +skip
-(defn skip+ [p]
-  (dp/repeat-min `skip+ p rfs/ignore 1))
+(defn +skip [p]
+  (dp/repeat-min `+skip p rfs/ignore 1))
 
 ;; fparsec: parray, +skipArray
 (defn repeat
@@ -441,47 +439,59 @@
 (defn max [p n]
   (dp/repeat-max `max p rfs/seqex n))
 
-(defn sep-by* [p sep]
-  (dp/sep `sep-by* p sep rfs/rvec true false))
+(defn *sep-by [p sep]
+  (dp/sep `*sep-by p sep rfs/rvec true false))
 
-(defn sep-by+ [p sep]
-  (dp/sep `sep-by+ p sep rfs/rvec false false))
+(defn +sep-by [p sep]
+  (dp/sep `+sep-by p sep rfs/rvec false false))
 
-(defn skip-sep-by* [p sep]
-  (dp/sep `skip-sep-by* p sep rfs/ignore true false))
+(defn *skip-sep-by [p sep]
+  (dp/sep `*skip-sep-by p sep rfs/ignore true false))
 
-(defn skip-sep-by+ [p sep]
-  (dp/sep `skip-sep-by+ p sep rfs/ignore false false))
+(defn +skip-sep-by [p sep]
+  (dp/sep `+skip-sep-by p sep rfs/ignore false false))
 
-(defn sep-end-by* [p sep]
-  (dp/sep `sep-end-by* p sep rfs/rvec true true))
+(defn *sep-end-by [p sep]
+  (dp/sep `*sep-end-by p sep rfs/rvec true true))
 
-(defn sep-end-by+ [p sep]
-  (dp/sep `sep-end-by+ p sep rfs/rvec false true))
+(defn +sep-end-by [p sep]
+  (dp/sep `+sep-end-by p sep rfs/rvec false true))
 
-(defn skip-sep-end-by* [p sep]
-  (dp/sep `skip-sep-end-by* p sep rfs/ignore true true))
+(defn *skip-sep-end-by [p sep]
+  (dp/sep `*skip-sep-end-by p sep rfs/ignore true true))
 
-(defn skip-sep-end-by+ [p sep]
-  (dp/sep `skip-sep-end-by+ p sep rfs/ignore false true))
+(defn +skip-sep-end-by [p sep]
+  (dp/sep `+skip-sep-end-by p sep rfs/ignore false true))
 
 ;; fparsec: manyTill + variants
 
-(defn till* [p endp]
-  (dp/until `till* p endp rfs/rvec true false))
+(defn *until [p endp]
+  (dp/until `*until p endp rfs/rvec true false))
 
-(defn till+ [p endp]
-  (dp/until `till+ p endp rfs/rvec false false))
+(defn +until [p endp]
+  (dp/until `+until p endp rfs/rvec false false))
 
 ;; fparsec: chainl, chainr, + variants
 
 ;;---------------------------------------------------------
 ;; Lazy / recursive
 
+(defn pforce
+  "Forces the delay `d` on-demand, which should yield a parser
+   that is applied in its stead."
+  [d]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [p (force d)]
+        (parser/apply p scanner reply)))
+    (children [_] [(force d)])))
+
+;; alternate name: pdelay
 (defmacro lazy [& body]
-  `(dp/pforce (delay ~@body)))
+  `(pforce (delay ~@body)))
 
 ;; fparsec: createParserForwardedToRef
+;; alternate name: pderef
 (defn ref
   "Returns a parser that forwards all calls to the parser returned
    by `@ref`.  Useful to construct recursive parsers."
@@ -549,6 +559,21 @@
 ;; Nesting parsers
 
 ;; TODO: Move this to a separate namespace?
+
+;; Multiple use cases:
+;; - Generate a scanner that repeatedly applies a parser to obtain
+;;   tokens (lexer).  Higher-level parsers can then be defined on
+;;   these tokens (instead of characters).
+;; - Parse the string result value of a parser:
+;;   - String interpolation
+;;   - HTML attributes with sub-grammar
+;;   - Markdown inlines
+;;   - Doc comments
+;; - Generate a scanner that concatenates strings returned from an
+;;   underlying parser.  Similar to the examples above, but the
+;;   chunks of strings are not considered tokens (the individual
+;;   characters are), and don't need to be buffered into a single
+;;   string before parsing.
 
 ;; TODO: Track `index`
 ;; Maybe: cache indexes of newlines seen, so that we can

@@ -1,6 +1,10 @@
 (ns paco.detail.position
   (:refer-clojure :exclude [compare]))
 
+
+;;? Add token index?
+;; Could be useful in nested error messages, to extract a substring
+;; from the source, e.g. to display the source line.
 (defprotocol IPosition
   (line-index [pos])
   (column-index [pos]))

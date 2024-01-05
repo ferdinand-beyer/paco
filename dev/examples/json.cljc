@@ -52,7 +52,7 @@
                                                               (parse-int 16)
                                                               char)))))))))
              (c/match (char-preds/not_ (char-preds/or_ (char-preds/among "\"\\") char-preds/control?))))
-      c/str*
+      c/*str
       (p/between (c/skip-char \"))))
 
 (comment
@@ -63,7 +63,7 @@
   )
 
 (defn comma-sep [p]
-  (p/sep-by* p (c/skip-char \,)))
+  (p/*sep-by p (c/skip-char \,)))
 
 (declare value)
 

@@ -11,6 +11,8 @@ public final class LineTracker {
 
     private int maxIndex;
 
+    // TODO: Take an initial position?
+    // Could be just a long that can be added to our position long.
     public LineTracker() {
         lineStarts = new int[INITIAL_CAPACITY];
         allocated = 0;

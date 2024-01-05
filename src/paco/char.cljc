@@ -154,8 +154,9 @@
                             expected-error))))))
 
 ;; fparsec: restOfLine, skipRestOfLine
+;; Can be implemented with regex
 ;; fparsec: charsTillString
-#_(defn chars-till-str [s skip? max-count])
+#_(defn chars-until-str [s skip? max-count])
 
 ;; fparsec: manySatisfy
 ;; fparsec: manySatisfy2 -- different pred for first character
@@ -185,6 +186,7 @@
             (.start ^java.util.regex.MatchResult m))
      :cljs (.-length (aget m 0))))
 
+;;? Add regex-groups?
 (defn regex [re]
   (let [expected-error (error/expected (str "pattern" re))]
     (fn [scanner reply]
@@ -196,12 +198,12 @@
 ;; fparsec: identifier
 
 ;; fparsec: manyChars, manyStrings
-(defn str* [p]
-  (dp/repeat-many `str* p rfs/string))
+(defn *str [p]
+  (dp/repeat-many `*str p rfs/string))
 
 ;; fparsec: many1Chars, many1Strings
-(defn str+ [p]
-  (dp/repeat-min `str+ p rfs/string 1))
+(defn +str [p]
+  (dp/repeat-min `+str p rfs/string 1))
 
 (defn strcat [& ps]
   (dp/pseq ps rfs/string))
