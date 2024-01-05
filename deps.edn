@@ -1,4 +1,4 @@
-{:paths ["src" "resources"]
+{:paths ["src" "resources" "target/classes/java"]
  :aliases
  {:dev
   {:extra-paths ["dev"]

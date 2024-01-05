@@ -4,12 +4,19 @@
 
 (def lib 'com.fbeyer/paco)
 (def version (format "0.1.%s" (b/git-count-revs nil)))
-(def class-dir "target/classes")
+(def class-dir "target/classes/clj")
+(def java-class-dir "target/classes/java")
 (def basis (b/create-basis {:project "deps.edn"}))
 (def uber-file (format "target/%s-%s.jar" (name lib) version))
 
 (defn clean [_]
   (b/delete {:path "target"}))
+
+(defn javac [_]
+  (b/javac {:basis basis
+            :src-dirs ["src"]
+            :class-dir java-class-dir
+            :javac-opts ["-Xlint:-options" "--release" "8"]}))
 
 (defn compile [_]
   (b/compile-clj {:basis basis
