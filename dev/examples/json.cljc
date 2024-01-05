@@ -183,6 +183,9 @@
   ;; (Execution time mean : 595,354831 µs)
   ;; Execution time mean : 162,104478 ms
 
+  ;; v0.1
+  ;; Execution time mean : 202,187895 ms
+
   (criterium/quick-bench
    (p/parse json input :line-tracking? false))
   ;; Execution time mean : 135,796054 ms
