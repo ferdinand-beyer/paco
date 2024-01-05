@@ -152,6 +152,12 @@
 (deftest string-return-test
   (is (= ::ok (p/parse (c/string-return "ok" ::ok) "okay"))))
 
+(deftest regex-test
+  (is (= "foob" (p/parse (c/regex #"[b-x]+") "foobar")))
+  (is (= "bar" (p/parse (p/then c/any-char c/any-char c/any-char
+                                (c/regex #"\w+"))
+                        "foobar and barfoo"))))
+
 (deftest str*-test
   (is (= "" (p/parse (c/str* (c/string "foo")) "bar")))
   (is (= "fb" (p/parse (c/str* (p/alt (c/string-return "foo" \f)

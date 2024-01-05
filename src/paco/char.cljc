@@ -194,7 +194,21 @@
    and returns them as a string."
     [pred])
 
-;; fparsec: regex
+(defn- re-match-length [m]
+  #?(:bb   (- (.end m) (.start m))
+     :clj  (unchecked-subtract-int
+            (.end ^java.util.regex.MatchResult m)
+            (.start ^java.util.regex.MatchResult m))
+     :cljs (.-length (aget m 0))))
+
+(defn regex [re]
+  (let [expected-error (error/expected (str "pattern" re))]
+    (fn [scanner reply]
+      (if-some [m (scanner/re-match scanner re)]
+        (reply/ok reply (scanner/read-str scanner (re-match-length m)))
+        (reply/fail reply (error/merge expected-error
+                                       (error/unexpected-token-or-end scanner)))))))
+
 ;; fparsec: identifier
 
 ;; fparsec: manyChars, manyStrings

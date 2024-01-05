@@ -25,6 +25,12 @@
   (re-match [scanner re])
   (read-from [scanner start]))
 
+;; TODO: Optimise
+(defn read-str [scanner n]
+  (when-let [s (peek-str scanner n)]
+    (skip! scanner (count s))
+    s))
+
 (defn re-groups [scanner re]
   (when-let [m (re-match scanner re)]
     #?(:clj  (clojure.core/re-groups m)
