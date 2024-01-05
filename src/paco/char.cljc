@@ -33,45 +33,35 @@
 
 (def skip-newline (newline-return nil))
 
-(defn- match-char [pred skip expected-error]
-  (fn [scanner reply]
-    (if-let [ch (scanner/peek scanner)]
-      (if (pred ch)
-        (do
-          (skip scanner)
-          (reply/ok reply ch))
-        (reply/fail reply (error/merge expected-error (error/unexpected-input ch))))
-      (reply/fail reply (error/merge expected-error error/unexpected-end)))))
+(defn- match-char [pred expected-error]
+  (let [pred  (char-preds/pred pred)
+        skip! (if (or (char-preds/test pred \newline)
+                      (char-preds/test pred \return))
+                scanner/skip!
+                scanner/untracked-skip!)]
+    (fn [scanner reply]
+      ;; TODO: This requires boxing.  Should we have a (scanner/matches-char-pred? scanner pred)?
+      (if-let [ch (scanner/peek scanner)]
+        (if (char-preds/test pred ch)
+          (do
+            (skip! scanner)
+            (reply/ok reply ch))
+          (reply/fail reply (error/merge expected-error (error/unexpected-input ch))))
+        (reply/fail reply (error/merge expected-error error/unexpected-end))))))
 
 ;; fparsec: satisfy; normalises newlines
 (defn match
   ([pred]
    (match pred nil))
   ([pred label]
-   (match-char pred
-               (if (or (pred \newline) (pred \return))
-                 scanner/skip!
-                 scanner/untracked-skip!)
-               (when label
-                 (error/expected label)))))
-
-(defn char-return [ch value]
-  (let [skip (if (or (= \newline ch) (= \return ch))
-               scanner/skip!
-               scanner/untracked-skip!)
-        expected-error (error/expected-input ch)]
-    (fn [scanner reply]
-      (if-let [ch* (scanner/peek scanner)]
-        (if (= ch ch*)
-          (do
-            (skip scanner)
-            (reply/ok reply value))
-          (reply/fail reply (error/merge expected-error (error/unexpected-input ch*))))
-        (reply/fail reply (error/merge expected-error error/unexpected-end))))))
+   (match-char pred (when label (error/expected label)))))
 
 ;; fparsec: pchar
 (defn char [ch]
-  (char-return ch ch))
+  (match-char (char-preds/eq ch) (error/expected-input ch)))
+
+(defn char-return [ch value]
+  (p/return (char ch) value))
 
 (defn skip-char [ch]
   (char-return ch nil))
@@ -81,31 +71,17 @@
 
 ;; fparsec: + skip variants
 (defn any-of [chars]
-  ;; TODO: Optimise for newlines?
-  (let [cset (set chars)
-        expected-error (map error/expected-input cset)]
-    (match-char cset
-                (if (or (cset \newline) (cset \return))
-                  scanner/skip!
-                  scanner/untracked-skip!)
-                expected-error)))
+  (match-char (char-preds/among chars) (map error/expected-input (set chars))))
 
 (defn none-of [chars]
-  ;; TODO: (expected "any char not in ...")
-  (let [cset (set chars)]
-    (match-char (complement cset)
-                (if (and (cset \newline) (cset \return))
-                  scanner/untracked-skip!
-                  scanner/skip!)
-                nil)))
+  ;; TODO: error message: (expected "any char not in ...")
+  (match-char (char-preds/not-among chars) nil))
 
 (defn char-range
   ([min-ch max-ch]
    (char-range min-ch max-ch nil))
   ([min-ch max-ch label]
-   (let [min-cp (char-preds/code-point min-ch)
-         max-cp (char-preds/code-point max-ch)]
-     (match #(<= min-cp (char-preds/code-point %) max-cp) label))))
+   (match (char-preds/in-range min-ch max-ch) label)))
 
 (def ascii-upper
   (match char-preds/ascii-upper? "ASCII upper-case letter"))
@@ -189,10 +165,22 @@
 ;; fparsec: manySatisfy2 -- different pred for first character
 ;; fparsec: many1Satisfy: one or more
 ;; fparsec: manyMinMaxSatisfy
-#_(defn match*
-    "Parses a sequence of zero or more characters satisfying `pred`,
+(defn *match
+  "Parses a sequence of zero or more characters satisfying `pred`,
    and returns them as a string."
-    [pred])
+  [pred]
+  (let [pred (char-preds/pred pred)]
+    (fn [scanner reply]
+      (let [start (scanner/index scanner)
+            value (when (pos? (scanner/skip-chars-while! scanner pred))
+                    (scanner/read-from scanner start))]
+        (reply/ok reply value)))))
+
+(defn *skip-match [pred]
+  (let [pred (char-preds/pred pred)]
+    (fn [scanner reply]
+      (scanner/skip-chars-while! scanner pred)
+      (reply/ok reply nil))))
 
 (defn- re-match-length [m]
   #?(:bb   (- (.end m) (.start m))

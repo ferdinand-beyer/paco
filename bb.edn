@@ -1,6 +1,8 @@
 {:deps {com.fbeyer/paco {:local/root "."}}
  :pods {clj-kondo/clj-kondo {:version "2023.12.15"}}
- :tasks {test (run '-test:all #_{:parallel true})
+ :tasks {javac (clojure "-T:build" "javac")
+
+         test (run '-test:all #_{:parallel true})
          -test:all {:depends [test:clj test:cljs test:bb]}
 
          test:clj (do

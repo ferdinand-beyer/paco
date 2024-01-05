@@ -3,7 +3,6 @@
             [paco.char :as c]
             [paco.core :as p]
             [paco.detail.error :as error]
-            [paco.detail.position :as pos]
             [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 

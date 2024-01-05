@@ -9,26 +9,8 @@
             [paco.detail.scanner :as scanner])
   #?(:clj (:import [clojure.lang MapEntry])))
 
-;; TODO: skip-match
-;; TODO: <??>, label fail! (aka, as)
-(def whitespace
-  (p/skip* (p/as (c/any-of " \r\n\t") "whitespace")))
-
-(def slow-number
-  (let [integer (c/strcat (p/? (c/char \-))
-                          (p/alt (c/char \0)
-                                 (p/cat (c/char-range \1 \9) (p/* c/digit))))
-        fraction (p/? (c/strcat (c/char \.) (p/+ c/digit)))
-        exponent (p/? (c/strcat (c/any-of "Ee")
-                                (p/? (c/any-of "-+"))
-                                (p/+ c/digit)))]
-    (p/with [integer integer
-             fraction fraction
-             exponent exponent]
-      (p/return
-       (if (or fraction exponent)
-         (parse-double (str integer fraction exponent))
-         (parse-long integer))))))
+(def skip-whitespace
+  (c/*skip-match (char-preds/among " \r\n\t")))
 
 (defn number [scanner reply]
   (if-let [m (scanner/re-match scanner #"-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
@@ -69,8 +51,7 @@
                                                           (-> (str/join chs)
                                                               (parse-int 16)
                                                               char)))))))))
-             (c/match #(not (or (#{\" \\} %)
-                                (char-preds/control? %)))))
+             (c/match (char-preds/not_ (char-preds/or_ (char-preds/among "\"\\") char-preds/control?))))
       c/str*
       (p/between (c/skip-char \"))))
 
@@ -87,7 +68,7 @@
 (declare value)
 
 (def array
-  (-> whitespace
+  (-> skip-whitespace
       (p/then (comma-sep (p/lazy value)))
       (p/between (c/skip-char \[) (c/skip-char \]))))
 
@@ -97,16 +78,16 @@
   )
 
 (def object-entry
-  (p/with [_ whitespace
+  (p/with [_ skip-whitespace
            k string
-           _ whitespace
+           _ skip-whitespace
            _ (c/skip-char \:)
            v value]
     (p/return (MapEntry. k v))))
 
 (def object
   (p/with [_ (c/skip-char \{)
-           _ whitespace
+           _ skip-whitespace
            entries (comma-sep object-entry)
            _ (c/skip-char \})]
     (p/return (into {} entries))))
@@ -120,9 +101,9 @@
                        (c/string-return "false" false)
                        (c/string-return "null" nil)]
                       "value")]
-    (p/with [_ whitespace
+    (p/with [_ skip-whitespace
              v value
-             _ whitespace]
+             _ skip-whitespace]
       (p/return v))))
 
 (def json (p/then-skip value p/end))
@@ -132,7 +113,7 @@
   (p/parse number "172")
   (p/parse number "172.23e-2")
   (p/parse string "\"foo\\u0044bar\"")
-  (p/parse whitespace "   \r\n")
+  (p/parse skip-whitespace "   \r\n")
 
   (p/parse (comma-sep number) "")
   (p/parse (comma-sep number) "1,2,3,4")
@@ -184,12 +165,14 @@
   ;; Execution time mean : 162,104478 ms
   ;; jvm: Execution time mean : 116,270402 ms
   ;; inline: Execution time mean : 86,652540 ms
+  ;; char-preds: Execution time mean : 74,400620 ms
+  ;; skip-whitespace: Execution time mean : 50,419218 ms
 
   ;; v0.1
   ;; Execution time mean : 202,187895 ms
 
   (criterium/quick-bench
-   (p/parse json input :line-tracking? false))
+   (p/parse json input {:line-tracking? false}))
   ;; Execution time mean : 135,796054 ms
 
   ;;
