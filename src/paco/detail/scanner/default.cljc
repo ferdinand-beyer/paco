@@ -12,7 +12,6 @@
   (index [scanner])
   (end? [scanner])
   (peek [scanner])
-  (matches? [scanner pred])
   (skip! [scanner] [scanner n])
   (state [scanner])
   (in-state? [scanner state])
@@ -24,6 +23,7 @@
   (matches-str? [scanner s])
   (matches-str-ci? [scanner s])
   (re-match [scanner re])
+  (skip-chars-while! [scanner pred])
   (read-from [scanner start]))
 
 (deftype StringScanner #?(:clj  [^String input
@@ -38,9 +38,6 @@
   (peek [_]
     (when (< index* end)
       (.charAt input index*)))
-  (matches? [_ pred]
-    (when (< index* end)
-      (pred (.charAt input index*))))
   (skip! [_]
     (if (< index* end)
       (do (set! index* (unchecked-inc-int index*)) 1)
@@ -87,6 +84,13 @@
                            (js/RegExp. re (.. re -flags (replace #"[gy]" "") (concat "y"))))]
                  (set! (.-lastIndex re*) index*)
                  (.exec re* input)))))
+  (skip-chars-while! [_ pred]
+    (loop [i index*]
+      (if (and (< i end) (pred (.charAt input i)))
+        (recur (unchecked-inc-int i))
+        (let [k (unchecked-subtract-int i index*)]
+          (set! index* k)
+          k))))
   (read-from [_ start] (subs input start index*)))
 
 (defn- string-scanner [^String s]
@@ -105,6 +109,7 @@
 (defprotocol ILineTracker
   (-track! [tracker index ch] [tracker index ch next-ch])
   (-track-skip! [tracker scanner] [tracker scanner n])
+  (-track-skip-while! [tracker scanner pred])
   (-position [tracker index]))
 
 (deftype ScannerState #?(:clj  [^long modcount ^int index user-state]
@@ -122,7 +127,6 @@
   (index [_] (index scanner))
   (end? [_] (end? scanner))
   (peek [_] (peek scanner))
-  (matches? [_ pred] (matches? scanner pred))
   (skip! [_]
     (let [k (if line-tracker
               (-track-skip! line-tracker scanner)
@@ -161,6 +165,13 @@
   (matches-str? [_ s] (matches-str? scanner s))
   (matches-str-ci? [_ s] (matches-str-ci? scanner s))
   (re-match [_ re] (re-match scanner re))
+  (skip-chars-while! [_ pred]
+    (let [k (if line-tracker
+              (-track-skip-while! line-tracker scanner pred)
+              (skip-chars-while! scanner pred))]
+      (when-not (zero? k)
+        (set! modcount* (unchecked-inc modcount*)))
+      k))
   (read-from [_ start] (read-from scanner start))
 
   IUserStateScanner
@@ -229,6 +240,17 @@
             (-track! this index ch next-ch)
             (recur k next-ch))
           k))))
+  (-track-skip-while! [this scanner pred]
+    (loop [k (int 0)
+           ch (peek scanner)]
+      (if (and ch (pred ch))
+        (let [index (index scanner)
+              k (unchecked-add-int k (skip! scanner))
+              next-ch (peek scanner)]
+          (-track! this index ch next-ch)
+          (recur k next-ch))
+        k)))
+
   (-position [_ index]
     (let [index (int index)
           i #?(:clj  (Collections/binarySearch starts index)

@@ -33,14 +33,6 @@
      :clj     (.peek ^PacoScanner scanner)
      :default (default/peek scanner)))
 
-(defn matches?
-  #?(:clj {:inline (fn [scanner pred]
-                     `(.matches ~(tag scanner) (CharPredicate/of ~pred)))})
-  [scanner pred]
-  #?(:bb      (default/matches? scanner pred)
-     :clj     (.matches ^PacoScanner scanner (CharPredicate/of pred))
-     :default (default/matches? scanner pred)))
-
 (defn skip!
   #?(:clj {:inline (fn
                      ([scanner]
@@ -114,19 +106,27 @@
      :clj     (.matchRegex ^PacoScanner scanner re)
      :default (default/re-match scanner re)))
 
-(defn read-from
-  #?(:clj {:inline (fn [scanner start] `(.readFrom ~(tag scanner) ~start))})
-  [scanner start]
-  #?(:bb      (default/read-from scanner start)
-     :clj     (.readFrom ^PacoScanner scanner start)
-     :default (default/read-from scanner start)))
-
 (defn re-groups [scanner re]
   (when-let [m (re-match scanner re)]
     #?(:clj  (clojure.core/re-groups m)
        :cljs (if (== (.-length m) 1)
                (aget m 0)
                (vec m)))))
+
+(defn skip-chars-while!
+  #?(:clj {:inline (fn [scanner pred]
+                     `(.skipCharsWhile ~(tag scanner) (CharPredicate/of ~pred)))})
+  [scanner pred]
+  #?(:bb      (default/skip-chars-while! scanner pred)
+     :clj     (.skipCharsWhile ^PacoScanner scanner (CharPredicate/of pred))
+     :default (default/skip-chars-while! scanner pred)))
+
+(defn read-from
+  #?(:clj {:inline (fn [scanner start] `(.readFrom ~(tag scanner) ~start))})
+  [scanner start]
+  #?(:bb      (default/read-from scanner start)
+     :clj     (.readFrom ^PacoScanner scanner start)
+     :default (default/read-from scanner start)))
 
 ;; IUserStateScanner
 

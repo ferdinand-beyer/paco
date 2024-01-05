@@ -92,7 +92,7 @@ public final class StringScanner implements CharScanner {
     public String readString(int n) {
         if (index < end) {
             final String s = input.substring(index, Math.min(index + n, end));
-            skip(s.length());
+            index += s.length();
             return s;
         }
         return null;

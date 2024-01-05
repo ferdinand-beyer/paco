@@ -202,7 +202,7 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
 
         @Override
         public final long position() {
-            return lineTracker.position(scanner.index());
+            return lineTracker.position(charScanner().index());
         }
 
         @Override
