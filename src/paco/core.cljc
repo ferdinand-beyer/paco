@@ -1,7 +1,6 @@
 (ns paco.core
   (:refer-clojure :exclude [* + cat max min not-empty ref repeat sequence])
-  (:require [paco.detail :as detail]
-            [paco.detail.error :as error]
+  (:require [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
@@ -467,13 +466,11 @@
 
 ;; fparsec: manyTill + variants
 
-;; *until?
-
 (defn till* [p endp]
-  (detail/reduce-till `till* p endp rfs/rvec true false))
+  (dp/until `till* p endp rfs/rvec true false))
 
 (defn till+ [p endp]
-  (detail/reduce-till `till+ p endp rfs/rvec false false))
+  (dp/until `till+ p endp rfs/rvec false false))
 
 ;; fparsec: chainl, chainr, + variants
 

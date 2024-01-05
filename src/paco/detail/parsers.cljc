@@ -214,6 +214,7 @@
             reply)))
       (children [_] [p]))))
 
+;; ? Add include-sep? option
 (defn sep [sym p psep rf empty-ok? sep-end-ok?]
   (reify parser/IParser
     (apply [_ scanner reply]
@@ -228,7 +229,7 @@
             ;; Apply `psep`.
             (let [reply (parser/apply psep scanner reply)
                   modcount-sep (scanner/modcount scanner)
-                  sep-error (reply/error reply)]
+                  error-sep (reply/error reply)]
               (if (reply/ok? reply)
                 ;; Got `sep`, now match `p`.
                 (let [reply (parser/apply p scanner reply)
@@ -241,30 +242,87 @@
                       (recur (rf result (reply/value reply))
                              modcount*
                              (if (= modcount-sep modcount*)
-                               (error/merge sep-error error*)
+                               (error/merge error-sep error*)
                                error*)))
                     ;; `p` failed.
                     (if (and sep-end-ok? (= modcount-sep modcount*))
                       (reply/ok reply
                                 (rf result)
                                 (error/merge (if (= modcount modcount-sep)
-                                               (error/merge error sep-error)
-                                               sep-error)
+                                               (error/merge error error-sep)
+                                               error-sep)
                                              error*))
                       (reply/with-error reply (if (= modcount-sep modcount*)
                                                 (error/merge (if (= modcount modcount-sep)
-                                                               (error/merge error sep-error)
-                                                               sep-error)
+                                                               (error/merge error error-sep)
+                                                               error-sep)
                                                              error*)
                                                 error*)))))
                 ;; `sep` failed.
                 (reply/ok reply
                           (rf result)
                           (if (= modcount modcount-sep)
-                            (error/merge error sep-error)
-                            sep-error)))))
+                            (error/merge error error-sep)
+                            error-sep)))))
           ;; Nothing matched.
           (if (and empty-ok? (= modcount (scanner/modcount scanner)))
             (reply/ok reply (rf result) (reply/error reply))
             reply))))
     (children [_] [p psep])))
+
+(defn until
+  [sym p pend rf empty-ok? include-end?]
+  (letfn [(apply-until [scanner reply result modcount error]
+            (let [reply (parser/apply pend scanner reply)
+                  modcount-end (scanner/modcount scanner)
+                  error-end (reply/error reply)]
+              (if (reply/ok? reply)
+                ;; Matched `pend` => end iteration.
+                (reply/ok reply
+                          (rf (cond-> result
+                                include-end? (rf (reply/value reply))))
+                          (if (= modcount modcount-end)
+                            (error/merge error error-end)
+                            error-end))
+                (if (= modcount modcount-end)
+                  ;; `pend` failed without consuming => match `p`.
+                  (let [reply (parser/apply p scanner reply)
+                        modcount* (scanner/modcount scanner)
+                        error* (reply/error reply)]
+                    (if (reply/ok? reply)
+                      ;; `p` matched => recur
+                      (if (= modcount modcount*)
+                        (throw (infinite-loop-exception sym p scanner))
+                        (recur scanner
+                               reply
+                               (rf result (reply/value reply))
+                               modcount*
+                               error*))
+                      ;; `p` failed => return error
+                      (reply/with-error reply (if (= modcount modcount*)
+                                                (error/merge (error/merge error error-end) error*)
+                                                error*))))
+                  ;; `pend` failed and consumed.
+                  reply))))]
+    (if empty-ok?
+      ;; Repeatedly check for `pend` or apply `p`.
+      (reify parser/IParser
+        (apply [_ scanner reply]
+          (apply-until scanner reply (rf) (scanner/modcount scanner) nil))
+        (children [_] [p pend]))
+      ;; Require at least one `p`, then continue as above.
+      (reify parser/IParser
+        (apply [_ scanner reply]
+          (let [result (rf)
+                modcount (scanner/modcount scanner)
+                reply (parser/apply p scanner reply)
+                modcount* (scanner/modcount scanner)]
+            (if (reply/ok? reply)
+              (if (= modcount modcount*)
+                (throw (infinite-loop-exception sym p scanner))
+                (apply-until scanner reply
+                             (rf result (reply/value reply))
+                             modcount*
+                             (reply/error reply)))
+              reply)))
+        (children [_] [p pend])))))

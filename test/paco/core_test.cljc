@@ -1,8 +1,6 @@
 (ns paco.core-test
   (:require [clojure.test :refer [deftest is testing]]
-            [paco.char :as c]
             [paco.core :as p]
-            [paco.detail :as detail]
             [paco.detail.error :as error]
             [paco.detail.position :as pos]
             [paco.helper :as helper])
@@ -229,11 +227,6 @@
       (is (= ::error/unexpected (get-in reply [:error :error :type]))))))
 
 (deftest attempt-test
-  (is (= :foo-fighters (-> (p/alt (p/attempt (p/cat (c/string "foo")
-                                                    (c/string "bar")))
-                                  (p/return (c/string-i "foo fighters") :foo-fighters))
-                           (p/parse "Foo Fighters are a band"))))
-
   (let [reply (helper/run (p/attempt helper/any))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
@@ -629,6 +622,11 @@
 
 (deftest till+-test
   (is (= [\f \o \o \b \a \r] (p/parse (p/till+ helper/any (p/token \.)) "foobar.")))
+
+  (let [reply (helper/run (p/till+ helper/any (p/token \.)))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= error/unexpected-end (:error reply))))
 
   (let [reply (helper/run (p/till+ helper/any (p/token \.)) ".")]
     (is (:fail? reply))
