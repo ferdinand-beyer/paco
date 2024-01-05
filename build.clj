@@ -7,7 +7,6 @@
 (def class-dir "target/classes/clj")
 (def java-class-dir "target/classes/java")
 (def basis (b/create-basis {:project "deps.edn"}))
-(def uber-file (format "target/%s-%s.jar" (name lib) version))
 
 (defn clean [_]
   (b/delete {:path "target"}))
@@ -30,5 +29,6 @@
 
 (defn recompile [params]
   (clean params)
+  (javac params)
   (compile params)
   (decompile params))

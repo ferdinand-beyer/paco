@@ -19,16 +19,14 @@ public interface CharPredicate {
 
     boolean test(char ch);
 
-    static CharPredicate not(CharPredicate p) {
-        return ch -> !p.test(ch);
-    }
-
-    static CharPredicate and(CharPredicate p1, CharPredicate p2) {
-        return ch -> p1.test(ch) && p2.test(ch);
-    }
-
-    static CharPredicate or(CharPredicate p1, CharPredicate p2) {
-        return ch -> p1.test(ch) || p2.test(ch);
+    static CharPredicate of(Object x) {
+        if (x instanceof CharPredicate) {
+            return (CharPredicate) x;
+        }
+        if (x instanceof IFn) {
+            return of((IFn) x);
+        }
+        throw new IllegalArgumentException("cannot coerce to CharPredicate");
     }
 
     static CharPredicate of(IFn f) {
@@ -45,6 +43,18 @@ public interface CharPredicate {
             final Object ret = f.invoke(ch);
             return ret != null && ret != Boolean.FALSE;
         };
+    }
+
+    static CharPredicate not(CharPredicate p) {
+        return ch -> !p.test(ch);
+    }
+
+    static CharPredicate and(CharPredicate p1, CharPredicate p2) {
+        return ch -> p1.test(ch) && p2.test(ch);
+    }
+
+    static CharPredicate or(CharPredicate p1, CharPredicate p2) {
+        return ch -> p1.test(ch) || p2.test(ch);
     }
 
     static CharPredicate equals(char ch) {

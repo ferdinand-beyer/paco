@@ -162,7 +162,7 @@
   (require '[clojure.data.json :as json])
 
   (def input (slurp "dev/examples/json/example4.json"))
-  (def input (slurp "dev/experiments/citm_catalog.json"))
+  (def input (slurp "dev/examples/json/citm_catalog.json"))
 
   (def us (p/parse json input))
   (def them (json/read-str input))
@@ -182,6 +182,8 @@
    (p/parse json input))
   ;; (Execution time mean : 595,354831 µs)
   ;; Execution time mean : 162,104478 ms
+  ;; jvm: Execution time mean : 116,270402 ms
+  ;; inline: Execution time mean : 86,652540 ms
 
   ;; v0.1
   ;; Execution time mean : 202,187895 ms
