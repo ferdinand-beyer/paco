@@ -5,6 +5,7 @@
             [paco.detail.parser :as parser]
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
+            [paco.detail.rfs :as rfs]
             [paco.detail.scanner :as scanner]))
 
 (defn- result-data [scanner reply]
@@ -125,7 +126,7 @@
   ([p1 p2 p3 p4 & more]
    (let [ps (list* p1 p2 p3 p4 (butlast more))
          f  (last more)]
-     (dp/pseq ps (reply/collector (completing conj #(apply f %)))))))
+     (dp/pseq ps (completing conj #(apply f %))))))
 
 ;; alternative names: pseq, sq, tup (tuple), grp (group), group-all
 (defn sequence
@@ -137,7 +138,8 @@
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 ;; alternative names: tuple
 (defn group
-  ([p] p)
+  ([p]
+   (pipe p vector))
   ([p1 p2]
    (pipe p1 p2 vector))
   ([p1 p2 p3]
@@ -155,7 +157,7 @@
   ([p1 p2 p3]
    (dp/with-seq [_ p1, _ p2, x p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/pseq (list* p1 p2 p3 p4 more) reply/last-collector)))
+   (dp/pseq (list* p1 p2 p3 p4 more) rfs/rlast)))
 
 ;; fparsec: .>>
 (defn then-skip
@@ -166,7 +168,7 @@
   ([p1 p2 p3]
    (dp/with-seq [x p1, _ p2, _ p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/pseq (list* p1 p2 p3 p4 more) reply/first-collector)))
+   (dp/pseq (list* p1 p2 p3 p4 more) rfs/rfirst)))
 
 ;; fparsetc: .>>.: like (cat p1 p2)
 
@@ -341,6 +343,7 @@
        (apply [_ scanner reply]
          (let [state (scanner/state scanner)
                reply (parser/apply p scanner reply)]
+           ;; TODO: Benchmark if we need the conditional
            (when-not (scanner/in-state? scanner state)
              (scanner/backtrack! scanner state))
            (if (reply/ok? reply)
@@ -359,6 +362,7 @@
        (apply [_ scanner reply]
          (let [state (scanner/state scanner)
                reply (parser/apply p scanner reply)]
+           ;; TODO: Benchmark if we need the conditional
            (when-not (scanner/in-state? scanner state)
              (scanner/backtrack! scanner state))
            (if (reply/ok? reply)
@@ -376,6 +380,7 @@
             reply (parser/apply p scanner reply)]
         (if (reply/ok? reply)
           (do
+            ;; TODO: Benchmark if we need the conditional
             (when-not (scanner/in-state? scanner state)
               (scanner/backtrack! scanner state))
             (reply/with-error reply nil))
@@ -390,10 +395,10 @@
 ;; Sequences / seqexp
 
 (defn cats [ps]
-  (dp/pseq ps reply/seqex-collector))
+  (dp/pseq ps rfs/seqex))
 
 (defn cat [& ps]
-  (dp/pseq ps reply/seqex-collector))
+  (dp/pseq ps rfs/seqex))
 
 ;; alternative names: opt, maybe
 (defn ?
@@ -406,53 +411,35 @@
 (defn *
   "Zero or more."
   [p]
-  (dp/repeat-many `* p reply/seqex-collector))
+  (dp/repeat-many `* p rfs/seqex))
 
 (defn +
   "One or more."
   [p]
-  (dp/repeat-min `+ p reply/seqex-collector 1))
+  (dp/repeat-min `+ p rfs/seqex 1))
 
 ;; fparsec: skipMany
 ;; or: *skip
 (defn skip* [p]
-  (dp/repeat-many `skip* p reply/nil-collector))
+  (dp/repeat-many `skip* p rfs/ignore))
 
 ;; fparsec: skipMany1
 ;; or: +skip
 (defn skip+ [p]
-  (dp/repeat-min `skip+ p reply/nil-collector 1))
+  (dp/repeat-min `skip+ p rfs/ignore 1))
 
 ;; fparsec: parray, +skipArray
 (defn repeat
   ([p n]
-   (dp/repeat-times `repeat p reply/seqex-collector n))
+   (dp/repeat-times `repeat p rfs/seqex n))
   ([p min max]
-   (dp/repeat-min-max `repeat p reply/seqex-collector min max)))
-
-(comment
-  ;; TODO: Collectors are broken!
-
-  (parse (cat (group any-token) (* any-token))
-         "abcdefgh")
-  ; => [\a \b \c \d \e \f \g \h]
-
-  (parse (cat (group any-token any-token) (* any-token))
-         "abcdefgh")
-  ; => [[\a \b] \c \d \e \f \g \h]
-
-  (parse (cat (group any-token (* any-token)) (* any-token))
-         "abcdefgh")
-  ; => [\b \c \d \e \f \g \h [\a :paco.detail.reply/complete]]
-
-  ;;
-  )
+   (dp/repeat-min-max `repeat p rfs/seqex min max)))
 
 (defn min [p n]
-  (dp/repeat-min `min p reply/seqex-collector n))
+  (dp/repeat-min `min p rfs/seqex n))
 
 (defn max [p n]
-  (dp/repeat-max `max p reply/seqex-collector n))
+  (dp/repeat-max `max p rfs/seqex n))
 
 (defn sep-by* [p sep]
   (detail/reduce-sep `sep-by* p sep detail/vector-rf true false))
