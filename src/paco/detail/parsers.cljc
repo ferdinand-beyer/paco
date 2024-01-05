@@ -213,3 +213,58 @@
                 (reply/ok? reply) (reply/with-value (rf (reply/value reply)))))
             reply)))
       (children [_] [p]))))
+
+(defn sep [sym p psep rf empty-ok? sep-end-ok?]
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [result (rf)
+            modcount (scanner/modcount scanner)
+            reply (parser/apply p scanner reply)]
+        (if (reply/ok? reply)
+          ;; Got first `p`, now match `(sep p)*`.
+          (loop [result (rf result (reply/value reply))
+                 modcount (scanner/modcount scanner)
+                 error (reply/error reply)]
+            ;; Apply `psep`.
+            (let [reply (parser/apply psep scanner reply)
+                  modcount-sep (scanner/modcount scanner)
+                  sep-error (reply/error reply)]
+              (if (reply/ok? reply)
+                ;; Got `sep`, now match `p`.
+                (let [reply (parser/apply p scanner reply)
+                      modcount* (scanner/modcount scanner)
+                      error* (reply/error reply)]
+                  (if (reply/ok? reply)
+                    (if (= modcount modcount*)
+                      ;; At least one of sep or p need to advance the scanner.
+                      (throw (infinite-loop-exception sym p scanner))
+                      (recur (rf result (reply/value reply))
+                             modcount*
+                             (if (= modcount-sep modcount*)
+                               (error/merge sep-error error*)
+                               error*)))
+                    ;; `p` failed.
+                    (if (and sep-end-ok? (= modcount-sep modcount*))
+                      (reply/ok reply
+                                (rf result)
+                                (error/merge (if (= modcount modcount-sep)
+                                               (error/merge error sep-error)
+                                               sep-error)
+                                             error*))
+                      (reply/with-error reply (if (= modcount-sep modcount*)
+                                                (error/merge (if (= modcount modcount-sep)
+                                                               (error/merge error sep-error)
+                                                               sep-error)
+                                                             error*)
+                                                error*)))))
+                ;; `sep` failed.
+                (reply/ok reply
+                          (rf result)
+                          (if (= modcount modcount-sep)
+                            (error/merge error sep-error)
+                            sep-error)))))
+          ;; Nothing matched.
+          (if (and empty-ok? (= modcount (scanner/modcount scanner)))
+            (reply/ok reply (rf result) (reply/error reply))
+            reply))))
+    (children [_] [p psep])))

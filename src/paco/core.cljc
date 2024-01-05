@@ -442,38 +442,38 @@
   (dp/repeat-max `max p rfs/seqex n))
 
 (defn sep-by* [p sep]
-  (detail/reduce-sep `sep-by* p sep detail/vector-rf true false))
+  (dp/sep `sep-by* p sep rfs/rvec true false))
 
 (defn sep-by+ [p sep]
-  (detail/reduce-sep `sep-by+ p sep detail/vector-rf false false))
+  (dp/sep `sep-by+ p sep rfs/rvec false false))
 
 (defn skip-sep-by* [p sep]
-  (detail/reduce-sep `skip-sep-by* p sep detail/ignore true false))
+  (dp/sep `skip-sep-by* p sep rfs/ignore true false))
 
 (defn skip-sep-by+ [p sep]
-  (detail/reduce-sep `skip-sep-by+ p sep detail/ignore false false))
+  (dp/sep `skip-sep-by+ p sep rfs/ignore false false))
 
 (defn sep-end-by* [p sep]
-  (detail/reduce-sep `sep-end-by* p sep detail/vector-rf true true))
+  (dp/sep `sep-end-by* p sep rfs/rvec true true))
 
 (defn sep-end-by+ [p sep]
-  (detail/reduce-sep `sep-end-by+ p sep detail/vector-rf false true))
+  (dp/sep `sep-end-by+ p sep rfs/rvec false true))
 
 (defn skip-sep-end-by* [p sep]
-  (detail/reduce-sep `skip-sep-end-by* p sep detail/ignore true true))
+  (dp/sep `skip-sep-end-by* p sep rfs/ignore true true))
 
 (defn skip-sep-end-by+ [p sep]
-  (detail/reduce-sep `skip-sep-end-by+ p sep detail/ignore false true))
+  (dp/sep `skip-sep-end-by+ p sep rfs/ignore false true))
 
 ;; fparsec: manyTill + variants
 
 ;; *until?
 
 (defn till* [p endp]
-  (detail/reduce-till `till* p endp detail/vector-rf true false))
+  (detail/reduce-till `till* p endp rfs/rvec true false))
 
 (defn till+ [p endp]
-  (detail/reduce-till `till+ p endp detail/vector-rf false false))
+  (detail/reduce-till `till+ p endp rfs/rvec false false))
 
 ;; fparsec: chainl, chainr, + variants
 
