@@ -30,16 +30,24 @@ public final class LineTracker {
         lineStarts[allocated++] = start;
     }
 
-    public boolean track(int index, char ch) {
+    public boolean track(int index, int ch) {
         return track(index, ch, CharScanner.EOS);
     }
-
-    public boolean track(int index, char ch, char nextCh) {
+    
+    public boolean track(int index, int ch, int nextCh) {
         if (index > maxIndex) {
             maxIndex = index;
-            // When \r\n: maxIndex++?
-            if (ch == '\n' || (ch == '\r' && nextCh != '\n')) {
+            if (ch == '\n') {
                 pushLineStart(index + 1);
+                return true;
+            }
+            if (ch == '\r') {
+                if (nextCh == '\n') {
+                    maxIndex++;
+                    pushLineStart(index + 2);
+                } else {
+                    pushLineStart(index + 1);
+                }
                 return true;
             }
         }
@@ -48,8 +56,8 @@ public final class LineTracker {
 
     public int skip(CharScanner scanner) {
         final int index = scanner.index();
-        final char ch = scanner.peekChar();
-        if (ch == CharScanner.EOS) {
+        final int ch = scanner.peekChar();
+        if (ch < 0) {
             return 0;
         }
         final int n = scanner.skip();
@@ -59,11 +67,11 @@ public final class LineTracker {
 
     public int skip(CharScanner scanner, int n) {
         int skipped = 0;
-        char ch = scanner.peekChar();
-        while (ch != CharScanner.EOS && skipped < n) {
+        int ch = scanner.peekChar();
+        while (ch >= 0 && skipped < n) {
             int index = scanner.index();
             skipped += scanner.skip();
-            char nextCh = scanner.peekChar();
+            int nextCh = scanner.peekChar();
             track(index, ch, nextCh);
             ch = nextCh;
         }
@@ -72,11 +80,11 @@ public final class LineTracker {
 
     public int skipCharsWhile(CharScanner scanner, CharPredicate pred) {
         int skipped = 0;
-        char ch = scanner.peekChar();
-        while (ch != CharScanner.EOS && pred.test(ch)) {
+        int ch = scanner.peekChar();
+        while (ch >= 0 && pred.test((char) ch)) {
             int index = scanner.index();
             skipped += scanner.skip();
-            char nextCh = scanner.peekChar();
+            int nextCh = scanner.peekChar();
             track(index, ch, nextCh);
             ch = nextCh;
         }

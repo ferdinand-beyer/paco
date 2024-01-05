@@ -79,7 +79,7 @@ public final class StringScanner implements CharScanner {
     }
 
     @Override
-    public char peekChar() {
+    public int peekChar() {
         return index < end ? input.charAt(index) : EOS;
     }
 
@@ -122,6 +122,19 @@ public final class StringScanner implements CharScanner {
             }
         }
         return null;
+    }
+
+    @Override
+    public int readCharWhen(CharPredicate pred) {
+        if (index < end) {
+            final char ch = input.charAt(index);
+            if (pred.test(ch)) {
+                ++index;
+                return ch;
+            }
+            return NO_MATCH;
+        }
+        return EOS;
     }
 
     @Override

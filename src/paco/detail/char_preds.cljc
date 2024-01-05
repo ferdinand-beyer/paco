@@ -86,6 +86,8 @@
      :cljs (or_ ascii-upper? ascii-lower?)
      :clj  CharPredicate/ASCII_LETTER))
 
+;; https://unicode.org/reports/tr18/#General_Category_Property
+
 (def upper?
   "Returns true if `ch` is a Unicode upper-case letter."
   #?(:bb   #(Character/isUpperCase (.charValue ^Character %))

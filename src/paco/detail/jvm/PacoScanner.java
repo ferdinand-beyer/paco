@@ -9,7 +9,7 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     protected final Scanner scanner;
 
     private Object userState;
-    private long modCount;
+    protected long modCount;
 
     protected PacoScanner(Scanner scanner, Object userState) {
         this.scanner = Objects.requireNonNull(scanner);
@@ -46,6 +46,13 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
 
     protected final int modifiedUnlessZero(int k) {
         if (k != 0) {
+            modCount++;
+        }
+        return k;
+    }
+
+    protected final int modifiedUnlessNegative(int k) {
+        if (k >= 0) {
             modCount++;
         }
         return k;
@@ -102,7 +109,7 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     }
 
     @Override
-    public final char peekChar() {
+    public final int peekChar() {
         return charScanner().peekChar();
     }
 
@@ -138,6 +145,11 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     @Override
     public final MatchResult matchRegex(Pattern re) {
         return charScanner().matchRegex(re);
+    }
+
+    @Override
+    public int readCharWhen(CharPredicate pred) {
+        return modifiedUnlessNegative(charScanner().readCharWhen(pred));
     }
 
     @Override
@@ -216,17 +228,28 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
         }
 
         @Override
-        public final int skipCharsWhile(CharPredicate pred) {
-            return modifiedUnlessZero(lineTracker.skipCharsWhile(charScanner(), pred));
-        }
-
-        @Override
         public String readString(int n) {
             final String s = charScanner().peekString(n);
             if (s != null) {
                 modifiedUnlessZero(lineTracker.skip(charScanner(), s.length()));
             }
             return s;
+        }
+
+        @Override
+        public int readCharWhen(CharPredicate pred) {
+            final CharScanner scanner = charScanner();
+            final int ch = scanner.readCharWhen(pred);
+            if (ch >= 0) {
+                modCount++;
+                lineTracker.track(scanner.index() - 1, ch, scanner.peekChar());
+            }
+            return ch;
+        }
+
+        @Override
+        public final int skipCharsWhile(CharPredicate pred) {
+            return modifiedUnlessZero(lineTracker.skipCharsWhile(charScanner(), pred));
         }
     }
 }

@@ -34,20 +34,15 @@
 (def skip-newline (newline-return nil))
 
 (defn- match-char [pred expected-error]
-  (let [pred  (char-preds/pred pred)
-        skip! (if (or (char-preds/test pred \newline)
-                      (char-preds/test pred \return))
-                scanner/skip!
-                scanner/untracked-skip!)]
+  (let [pred (char-preds/pred pred)]
     (fn [scanner reply]
-      ;; TODO: This requires boxing.  Should we have a (scanner/matches-char-pred? scanner pred)?
-      (if-let [ch (scanner/peek scanner)]
-        (if (char-preds/test pred ch)
-          (do
-            (skip! scanner)
-            (reply/ok reply ch))
-          (reply/fail reply (error/merge expected-error (error/unexpected-input ch))))
-        (reply/fail reply (error/merge expected-error error/unexpected-end))))))
+      (let [ch (scanner/read-char-when! scanner pred)]
+        (if ch
+          (reply/ok reply ch)
+          (reply/fail reply (error/merge expected-error
+                                         (if (nil? ch)
+                                           error/unexpected-end
+                                           (error/unexpected-input (scanner/peek scanner))))))))))
 
 ;; fparsec: satisfy; normalises newlines
 (defn match
@@ -64,6 +59,7 @@
   (p/return (char ch) value))
 
 (defn skip-char [ch]
+  ;; ? This is slower than `char` -- optimise?
   (char-return ch nil))
 
 ;; fparsec: + skipAnyChar
@@ -193,7 +189,7 @@
   (let [expected-error (error/expected (str "pattern" re))]
     (fn [scanner reply]
       (if-some [m (scanner/re-match scanner re)]
-        (reply/ok reply (scanner/read-str scanner (re-match-length m)))
+        (reply/ok reply (scanner/read-str! scanner (re-match-length m)))
         (reply/fail reply (error/merge expected-error
                                        (error/unexpected-token-or-end scanner)))))))
 

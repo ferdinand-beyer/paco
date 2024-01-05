@@ -5,9 +5,10 @@ import java.util.regex.Pattern;
 
 public interface CharScanner extends Scanner {
 
-    char EOS = '\uffff';
+    int EOS = -1;
+    int NO_MATCH = -2;
 
-    char peekChar();
+    int peekChar();
 
     String peekString(int n);
 
@@ -20,6 +21,8 @@ public interface CharScanner extends Scanner {
     boolean matchesStringIgnoreCase(String s);
 
     MatchResult matchRegex(Pattern re);
+
+    int readCharWhen(CharPredicate pred);
 
     int skipCharsWhile(CharPredicate pred);
 

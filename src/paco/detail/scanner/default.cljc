@@ -19,10 +19,12 @@
 
 (defprotocol ICharScanner
   (peek-str [scanner n])
-  (read-str [scanner n])
+  (read-str! [scanner n])
+  (matches-char-pred? [scanner pred])
   (matches-str? [scanner s])
   (matches-str-ci? [scanner s])
   (re-match [scanner re])
+  (read-char-when! [scanner pred])
   (skip-chars-while! [scanner pred])
   (read-from [scanner start]))
 
@@ -57,11 +59,13 @@
   (peek-str [_ n]
     (when (< index* end)
       (.substring input index* (Math/min (unchecked-add-int index* (int n)) end))))
-  (read-str [_ n]
+  (read-str! [_ n]
     (when (< index* end)
       (let [s (.substring input index* (Math/min (unchecked-add-int index* (int n)) end))]
         (set! index* (unchecked-add-int index* (count s)))
         s)))
+  (matches-char-pred? [_ pred]
+    (and (< index* end) (pred (.charAt input index*))))
   (matches-str? [_ s]
     #?(:clj  (.regionMatches input index* s 0 (.length ^String s))
        :cljs (let [e (unchecked-add-int index* (.-length s))]
@@ -84,6 +88,14 @@
                            (js/RegExp. re (.. re -flags (replace #"[gy]" "") (concat "y"))))]
                  (set! (.-lastIndex re*) index*)
                  (.exec re* input)))))
+  (read-char-when! [_ pred]
+    (when (< index* end)
+      (let [ch (.charAt input index*)]
+        (if (pred ch)
+          (do
+            (set! index* (unchecked-inc-int index*))
+            ch)
+          false))))
   (skip-chars-while! [_ pred]
     (loop [i index*]
       (if (and (< i end) (pred (.charAt input i)))
@@ -153,18 +165,26 @@
 
   ICharScanner
   (peek-str [_ n] (peek-str scanner n))
-  (read-str [_ n]
+  (read-str! [_ n]
     (let [s (if line-tracker
               (when-let [s (peek-str scanner n)]
                 (-track-skip! line-tracker scanner n)
                 s)
-              (read-str scanner n))]
+              (read-str! scanner n))]
       (when-not (zero? (count s))
         (set! modcount* (unchecked-inc modcount*)))
       s))
+  (matches-char-pred? [_ pred] (matches-char-pred? scanner pred))
   (matches-str? [_ s] (matches-str? scanner s))
   (matches-str-ci? [_ s] (matches-str-ci? scanner s))
   (re-match [_ re] (re-match scanner re))
+  (read-char-when! [_ pred]
+    (let [ch (read-char-when! scanner pred)]
+      (when ch
+        (set! modcount* (unchecked-inc modcount*))
+        (when line-tracker
+          (-track! line-tracker (unchecked-dec (index scanner)) ch (peek scanner))))
+      ch))
   (skip-chars-while! [_ pred]
     (let [k (if line-tracker
               (-track-skip-while! line-tracker scanner pred)
