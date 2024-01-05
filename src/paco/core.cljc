@@ -91,7 +91,7 @@
               (let [modcount (scanner/modcount scanner)
                     reply    (parser/apply p2 scanner reply)]
                 (if (= modcount (scanner/modcount scanner))
-                  (reply/with-error reply (error/merge error (reply/error error)))
+                  (reply/with-error reply (error/merge error (reply/error reply)))
                   reply))
               (parser/apply p2 scanner reply)))
           reply)))

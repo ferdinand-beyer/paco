@@ -3,7 +3,10 @@
   (:require [clojure.string :as str]
             [paco.char :as c]
             [paco.core :as p]
-            [paco.detail.char-preds :as char-preds])
+            [paco.detail.char-preds :as char-preds]
+            [paco.detail.error :as error]
+            [paco.detail.reply :as reply]
+            [paco.detail.scanner :as scanner])
   #?(:clj (:import [clojure.lang MapEntry])))
 
 ;; TODO: skip-match
@@ -11,7 +14,7 @@
 (def whitespace
   (p/skip* (p/as (c/any-of " \r\n\t") "whitespace")))
 
-(def number
+(def slow-number
   (let [integer (c/strcat (p/? (c/char \-))
                           (p/alt (c/char \0)
                                  (p/cat (c/char-range \1 \9) (p/* c/digit))))
@@ -26,6 +29,27 @@
        (if (or fraction exponent)
          (parse-double (str integer fraction exponent))
          (parse-long integer))))))
+
+(defn number [scanner reply]
+  (if-let [m (scanner/re-match scanner #"-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
+    (let [m #?(:bb m, :clj ^java.util.regex.MatchResult m, :cljs m)
+          s #?(:clj (.group m), :cljs (aget m 0))
+          n #?(:clj (.length s), :cljs (.-length s))
+          v (if (and #?(:clj (neg? (.start m 1)), :cljs (aget m 1))
+                     #?(:clj (neg? (.start m 2)), :cljs (aget m 2)))
+              ;; Only the integer part matched.
+              #?(:clj (if (< n 18)
+                        (Long/valueOf s)
+                        (or (try (Long/valueOf s)
+                                 (catch NumberFormatException _ nil))
+                            (bigint s)))
+                 :cljs (js/parseInt s 10))
+              ;; Also the fraction and/or exponent matched
+              #?(:clj (Double/valueOf s), :cljs (parse-double s)))]
+      (scanner/skip! scanner n)
+      (reply/ok reply v))
+    (reply/fail reply (error/merge (error/unexpected-token-or-end scanner)
+                                   (error/expected "number")))))
 
 (defn- parse-int [s radix]
   #?(:clj  (Long/parseLong s radix)
@@ -138,6 +162,7 @@
   (require '[clojure.data.json :as json])
 
   (def input (slurp "dev/examples/json/example4.json"))
+  (def input (slurp "dev/experiments/citm_catalog.json"))
 
   (def us (p/parse json input))
   (def them (json/read-str input))
@@ -149,12 +174,18 @@
   ;; them
   (criterium/quick-bench
    (json/read-str input))
-  ;; Execution time mean : 27,387667 µs
+  ;; (Execution time mean : 27,387667 µs)
+  ;; Execution time mean : 25,358191 ms
 
   ;; us
   (criterium/quick-bench
    (p/parse json input))
-  ;; Execution time mean : 595,354831 µs
+  ;; (Execution time mean : 595,354831 µs)
+  ;; Execution time mean : 162,104478 ms
+
+  (criterium/quick-bench
+   (p/parse json input :line-tracking? false))
+  ;; Execution time mean : 135,796054 ms
 
   ;;
   )
