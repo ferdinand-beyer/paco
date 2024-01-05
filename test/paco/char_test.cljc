@@ -1,5 +1,5 @@
 (ns paco.char-test
-  (:require [clojure.test :refer [are deftest is]]
+  (:require [clojure.test :refer [deftest is]]
             [paco.char :as c]
             [paco.core :as p]
             [paco.detail.error :as error]
@@ -86,61 +86,38 @@
     (is (= #{(error/expected "the letter X") error/unexpected-end} (:messages reply)))))
 
 (deftest ascii-upper-test
-  (are [ch] (c/ascii-upper? ch) \A \B \M \Y \Z)
-  (are [ch] (not (c/ascii-upper? ch)) \a \b \m \y \z \0 \? \u0000)
-
   (is (= \F (p/parse c/ascii-upper "Foobar")))
   (is (:fail? (helper/run c/ascii-upper "foobar"))))
 
 (deftest ascii-lower-test
-  (are [ch] (c/ascii-lower? ch) \a \b \m \y \z)
-  (are [ch] (not (c/ascii-lower? ch)) \A \B \M \Y \Z \0 \? \u0000)
   (is (= \f (p/parse c/ascii-lower "foobar")))
   (is (:fail? (helper/run c/ascii-lower "FOOBAR"))))
 
 (deftest ascii-letter-test
-  (are [ch] (c/ascii-letter? ch) \a \b \m \y \z \A \B \M \Y \Z)
-  (are [ch] (not (c/ascii-letter? ch)) \0 \? \u0000)
   (is (= \f (p/parse c/ascii-letter "foobar")))
   (is (:fail? (helper/run c/ascii-letter "123"))))
 
 (deftest upper-test
-  (are [ch] (c/upper? ch) \A \Æ)
-  (are [ch] (not (c/upper? ch)) \a \æ \ß \0 \? \u0000)
   (is (= \Ä (p/parse c/upper "Ärmel")))
   (is (:fail? (helper/run c/upper "ärmel"))))
 
 (deftest lower-test
-  (are [ch] (c/lower? ch) \a \æ \ß)
-  (are [ch] (not (c/lower? ch)) \A \Æ \0 \? \u0000)
   (is (= \ä (p/parse c/lower "ärmel")))
   (is (:fail? (helper/run c/lower "ÄRMEL"))))
 
 (deftest letter-test
-  (are [ch] (c/letter? ch) \A \Æ \a \æ \ß)
-  (are [ch] (not (c/letter? ch)) \0 \? \u0000)
   (is (= \ß (p/parse c/letter "ßigkeit")))
   (is (:fail? (helper/run c/letter "123"))))
 
-(deftest control-test
-  (are [ch] (c/control? ch) \u0000 \u000f \u001f \u007f \u008f \u009f)
-  (are [ch] (not (c/control? ch)) \A \Æ \a \æ \ß \0 \?))
-
 (deftest digit-test
-  (are [ch] (c/digit? ch) \0 \1 \5 \8 \9)
-  (are [ch] (not (c/digit? ch)) \A \Z \a \z \? \u0000)
   (is (= \5 (p/parse c/digit "5 o'clock")))
   (is (:fail? (helper/run c/digit "abc"))))
 
 (deftest hex-test
-  (are [ch] (c/hex? ch) \0 \1 \9 \a \c \f \A \C \F)
-  (are [ch] (not (c/hex? ch)) \G \g \Æ \æ \ß \? \u0000)
   (is (= \c (p/parse c/hex "c0ffee")))
   (is (:fail? (helper/run c/hex "xyz"))))
 
 (deftest octal-test
-  (are [ch] (c/octal? ch) \0 \1 \5 \7)
-  (are [ch] (not (c/octal? ch)) \8 \9 \a \A \Æ \æ \ß \? \u0000)
   (is (= \0 (p/parse c/octal "0733")))
   (is (:fail? (helper/run c/octal "999"))))
 
@@ -158,16 +135,16 @@
     (is (not (:changed? reply)))
     (is (= (error/expected-input "foo") (:error reply)))))
 
-(deftest string-i-test
-  (is (= "FoO" (p/parse (c/string-i "foo") "FoObAr")))
-  (is (thrown? ExceptionInfo (c/string-i "enter\n")))
+(deftest string-ci-test
+  (is (= "FoO" (p/parse (c/string-ci "foo") "FoObAr")))
+  (is (thrown? ExceptionInfo (c/string-ci "enter\n")))
 
-  (let [reply (helper/run (c/string-i "foo"))]
+  (let [reply (helper/run (c/string-ci "foo"))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= #{error/unexpected-end (error/expected-input "foo")} (:messages reply))))
 
-  (let [reply (helper/run (c/string-i "foo") "FOX")]
+  (let [reply (helper/run (c/string-ci "foo") "FOX")]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= (error/expected-input "foo") (:error reply)))))
@@ -195,4 +172,4 @@
 (deftest skipped-test
   (is (= "abc" (p/parse (c/skipped (p/* c/any-char)) "abc")))
   (let [reply (helper/run (c/skipped (p/* c/any-char)) "one\ntwo\n")]
-    (is (= 2 (pos/line-index (:state reply))))))
+    (is (= 2 (get-in reply [:position :line])))))

@@ -18,6 +18,7 @@
       :error    (reply/error reply)
       :messages (error/message-set (reply/error reply))
       :index    (scanner/index scanner)
+      :position (scanner/position scanner)
       :changed? (not= modcount (scanner/modcount scanner))})))
 
 (def any p/any-token)

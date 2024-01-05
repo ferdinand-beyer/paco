@@ -5,7 +5,8 @@
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
-            [paco.detail.scanner :as scanner]))
+            [paco.detail.scanner :as scanner])
+  #?(:cljs (:require-macros [paco.core])))
 
 (defn- result-data [scanner reply]
   {:ok?        (reply/ok? reply)

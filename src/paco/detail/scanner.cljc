@@ -22,7 +22,8 @@
   (peek-str [scanner n])
   (matches-str? [scanner s])
   (matches-str-ci? [scanner s])
-  (re-match [scanner re]))
+  (re-match [scanner re])
+  (read-from [scanner start]))
 
 (defn re-groups [scanner re]
   (when-let [m (re-match scanner re)]
@@ -51,9 +52,10 @@
       (do (set! index* (unchecked-inc-int index*)) 1)
       0))
   (skip! [_ n]
-    (let [index (Math/min (unchecked-add-int index* (int n)) end)]
+    (let [index (Math/min (unchecked-add-int index* (int n)) end)
+          k     (unchecked-subtract-int index index*)]
       (set! index* index)
-      (unchecked-subtract-int index index*)))
+      k))
   (state [_] index*)
   (in-state? [_ index] (= index index*))
   (backtrack! [this index]
@@ -85,7 +87,8 @@
                            re
                            (js/RegExp. re (.. re -flags (replace #"[gy]" "") (concat "y"))))]
                  (set! (.-lastIndex re*) index*)
-                 (.exec re* input))))))
+                 (.exec re* input)))))
+  (read-from [_ start] (subs input start index*)))
 
 (defn- string-scanner [^String s]
   (StringScanner. s #?(:clj (.length s) :cljs (.-length s)) 0))
@@ -140,11 +143,11 @@
   (state [_]
     (ScannerState. modcount* (index scanner) user-state*))
   (in-state? [_ state]
-    (= modcount* (.modcount ^ScannerState state)))
+    (= modcount* (.-modcount ^ScannerState state)))
   (backtrack! [this state]
-    (backtrack! scanner (.index ^ScannerState state))
-    (set! modcount* (.modcount ^ScannerState state))
-    (set! user-state* (.user-state ^ScannerState state))
+    (backtrack! scanner (.-index ^ScannerState state))
+    (set! modcount* (.-modcount ^ScannerState state))
+    (set! user-state* (.-user-state ^ScannerState state))
     this)
 
   ICharScanner
@@ -152,13 +155,14 @@
   (matches-str? [_ s] (matches-str? scanner s))
   (matches-str-ci? [_ s] (matches-str-ci? scanner s))
   (re-match [_ re] (re-match scanner re))
+  (read-from [_ start] (read-from scanner start))
 
   IModCountScanner
   (modcount [_] modcount*)
   (backtrack-modified! [this state]
-    (backtrack! scanner (.index ^ScannerState state))
+    (backtrack! scanner (.-index ^ScannerState state))
     (set! modcount* (unchecked-inc modcount*))
-    (set! user-state* (.user-state ^ScannerState state))
+    (set! user-state* (.-user-state ^ScannerState state))
     this)
 
   IUserStateScanner

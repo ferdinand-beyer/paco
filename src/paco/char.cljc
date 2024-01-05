@@ -1,40 +1,47 @@
 (ns paco.char
   (:refer-clojure :exclude [char newline])
   (:require [paco.core :as p]
-            [paco.detail :as detail]
             [paco.detail.char-preds :as char-preds]
             [paco.detail.error :as error]
-            [paco.state :as state]))
+            [paco.detail.parser :as parser]
+            [paco.detail.parsers :as dp]
+            [paco.detail.reply :as reply]
+            [paco.detail.rfs :as rfs]
+            [paco.detail.scanner :as scanner]))
 
 ;;---------------------------------------------------------
 ;; Character parsers
 
 (defn newline-return [value]
-  (fn [state reply]
-    (if-let [ch (state/peek state)]
-      (if (= \newline ch)
-        (reply :ok (state/skip state) value nil)
-        (if (= \return ch)
-          (let [state (state/skip state)]
-            (reply :ok (if (= \newline (state/peek state))
-                         (state/skip state)
-                         state)
-                   value nil))
-          (reply :error state nil (error/merge (error/expected "newline")
-                                               (error/unexpected-input ch)))))
-      (reply :error state nil error/unexpected-end))))
+  (let [expected-error (error/expected "newline")]
+    (fn [scanner reply]
+      (if-let [ch (scanner/peek scanner)]
+        (if (= \newline ch)
+          (do
+            (scanner/skip! scanner)
+            (reply/ok reply value))
+          (if (= \return ch)
+            (do
+              (scanner/skip! scanner)
+              (when (= \newline (scanner/peek scanner))
+                (scanner/skip! scanner))
+              (reply/ok reply value))
+            (reply/fail reply (error/merge expected-error (error/unexpected-input ch)))))
+        (reply/fail reply error/unexpected-end)))))
 
 (def newline (newline-return \newline))
 
 (def skip-newline (newline-return nil))
 
-(defn- match-char [pred skip error]
-  (fn [state reply]
-    (if-let [ch (state/peek state)]
+(defn- match-char [pred skip expected-error]
+  (fn [scanner reply]
+    (if-let [ch (scanner/peek scanner)]
       (if (pred ch)
-        (reply :ok (skip state) ch nil)
-        (reply :error state nil (error (error/unexpected-input ch))))
-      (reply :error state nil (error error/unexpected-end)))))
+        (do
+          (skip scanner)
+          (reply/ok reply ch))
+        (reply/fail reply (error/merge expected-error (error/unexpected-input ch))))
+      (reply/fail reply (error/merge expected-error error/unexpected-end)))))
 
 ;; fparsec: satisfy; normalises newlines
 (defn match
@@ -43,24 +50,24 @@
   ([pred label]
    (match-char pred
                (if (or (pred \newline) (pred \return))
-                 state/skip
-                 state/untracked-skip)
-               (if label
-                 (let [error (error/expected label)]
-                   #(error/merge error %))
-                 identity))))
+                 scanner/skip!
+                 scanner/untracked-skip!)
+               (when label
+                 (error/expected label)))))
 
 (defn char-return [ch value]
-  (let [skip  (if (or (= \newline ch) (= \return ch))
-                state/skip
-                state/untracked-skip)
-        error (error/expected-input ch)]
-    (fn [state reply]
-      (if-let [next-ch (state/peek state)]
-        (if (= ch next-ch)
-          (reply :ok (skip state) value nil)
-          (reply :error state nil (error/merge (error/unexpected-input next-ch) error)))
-        (reply :error state nil (error/merge error/unexpected-end error))))))
+  (let [skip (if (or (= \newline ch) (= \return ch))
+               scanner/skip!
+               scanner/untracked-skip!)
+        expected-error (error/expected-input ch)]
+    (fn [scanner reply]
+      (if-let [ch* (scanner/peek scanner)]
+        (if (= ch ch*)
+          (do
+            (skip scanner)
+            (reply/ok reply value))
+          (reply/fail reply (error/merge expected-error (error/unexpected-input ch*))))
+        (reply/fail reply (error/merge expected-error error/unexpected-end))))))
 
 ;; fparsec: pchar
 (defn char [ch]
@@ -70,31 +77,27 @@
   (char-return ch nil))
 
 ;; fparsec: + skipAnyChar
-(def any-char
-  (fn [state reply]
-    (if-let [ch (state/peek state)]
-      (reply :ok (state/skip state) ch nil)
-      (reply :error state nil error/unexpected-end))))
+(def any-char p/any-token)
 
 ;; fparsec: + skip variants
 (defn any-of [chars]
   ;; TODO: Optimise for newlines?
-  (let [charset (set chars)
-        error   (map error/expected-input charset)]
-    (match-char charset
-                (if (or (charset \newline) (charset \return))
-                  state/skip
-                  state/untracked-skip)
-                #(error/merge error %))))
+  (let [cset (set chars)
+        expected-error (map error/expected-input cset)]
+    (match-char cset
+                (if (or (cset \newline) (cset \return))
+                  scanner/skip!
+                  scanner/untracked-skip!)
+                expected-error)))
 
 (defn none-of [chars]
   ;; TODO: (expected "any char not in ...")
-  (let [charset (set chars)]
-    (match-char (complement charset)
-                (if (and (charset \newline) (charset \return))
-                  state/untracked-skip
-                  state/skip)
-                identity)))
+  (let [cset (set chars)]
+    (match-char (complement cset)
+                (if (and (cset \newline) (cset \return))
+                  scanner/untracked-skip!
+                  scanner/skip!)
+                nil)))
 
 (defn char-range
   ([min-ch max-ch]
@@ -149,31 +152,34 @@
 ;;   anyString, skipAnyString
 (defn string [s]
   (check-string-literal s)
-  (let [length   (count s)
-        error     (error/expected-input s)
-        error-end (error/merge error/unexpected-end error)]
-    (fn [state reply]
-      (if (state/matches-str? state s)
-        (reply :ok (state/untracked-skip state length) s nil)
-        (reply :error state nil (if (state/at-end? state)
-                                  error-end
-                                  error))))))
+  (let [length (count s)
+        expected-error (error/expected-input s)
+        unexpected-end (error/merge error/unexpected-end expected-error)]
+    (fn [scanner reply]
+      (if (scanner/matches-str? scanner s)
+        (do
+          (scanner/untracked-skip! scanner length)
+          (reply/ok reply s))
+        (reply/fail reply (if (scanner/end? scanner)
+                            unexpected-end
+                            expected-error))))))
 
 (defn string-return [ch x]
   (p/return (string ch) x))
 
-(defn string-i [s]
+(defn string-ci [s]
   (check-string-literal s)
-  (let [length    (count s)
-        error     (error/expected-input s) ;; TODO: expected-str-ic?
-        error-end (error/merge error/unexpected-end error)]
-    (fn [state reply]
-      (if (state/matches-str-i? state s)
-        (reply :ok (state/untracked-skip state length)
-               (state/peek-str state length) nil)
-        (reply :error state nil (if (state/at-end? state)
-                                  error-end
-                                  error))))))
+  (let [length (count s)
+        expected-error (error/expected-input s) ;; ? expected-input-ci?
+        unexpected-end (error/merge error/unexpected-end expected-error)]
+    (fn [scanner reply]
+      (if (scanner/matches-str-ci? scanner s)
+        (let [value (scanner/peek-str scanner length)]
+          (scanner/untracked-skip! scanner length)
+          (reply/ok reply value))
+        (reply/fail reply (if (scanner/end? scanner)
+                            unexpected-end
+                            expected-error))))))
 
 ;; fparsec: restOfLine, skipRestOfLine
 ;; fparsec: charsTillString
@@ -193,22 +199,22 @@
 
 ;; fparsec: manyChars, manyStrings
 (defn str* [p]
-  (detail/reduce-repeat `str* p detail/string-rf 0))
+  (dp/repeat-many `str* p rfs/string))
 
 ;; fparsec: many1Chars, many1Strings
 (defn str+ [p]
-  (detail/reduce-repeat `str+ p detail/string-rf 1))
+  (dp/repeat-min `str+ p rfs/string 1))
 
 (defn strcat [& ps]
-  (detail/reduce-sequence detail/string-rf ps))
+  (dp/pseq ps rfs/string))
 
 (defn skipped [p]
-  (fn [state reply]
-    (let [index0 (state/index state)]
-      (detail/call p state (fn [status1 state1 value1 error1]
-                             (if (detail/ok? status1)
-                               (let [n (- (state/index state1) index0)]
-                                 (reply :ok state1 (state/peek-str state n) error1))
-                               (reply status1 state1 value1 error1)))))))
+  (reify parser/IParser
+    (apply [_ scanner reply]
+      (let [start (scanner/index scanner)
+            reply (parser/apply p scanner reply)]
+        (cond-> reply
+          (reply/ok? reply) (reply/with-value (scanner/read-from scanner start)))))
+    (children [_] [p])))
 
 ;; fparsec: number parsers (int, float)

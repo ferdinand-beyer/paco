@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [array])
   (:require [clojure.string :as str]
             [paco.char :as c]
-            [paco.core :as p])
+            [paco.core :as p]
+            [paco.detail.char-preds :as char-preds])
   #?(:clj (:import [clojure.lang MapEntry])))
 
 ;; TODO: skip-match
@@ -45,7 +46,7 @@
                                                               (parse-int 16)
                                                               char)))))))))
              (c/match #(not (or (#{\" \\} %)
-                                (c/control? %)))))
+                                (char-preds/control? %)))))
       c/str*
       (p/between (c/skip-char \"))))
 

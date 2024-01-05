@@ -167,7 +167,7 @@
 
 ;; ## Parse word, case-insensitive ##
 
-(bench-paco (c/string-i "abc") "ABC")
+(bench-paco (c/string-ci "abc") "ABC")
 ;             Execution time mean : 48,778929 ns
 ;    Execution time std-deviation : 4,791800 ns
 ;   Execution time lower quantile : 45,219154 ns ( 2,5%)
