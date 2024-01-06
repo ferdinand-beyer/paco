@@ -1,10 +1,10 @@
 (ns examples.json
   (:refer-clojure :exclude [array])
-  (:require [clojure.string :as str]
-            [paco.char :as c]
+  (:require [paco.char :as c]
             [paco.core :as p]
             [paco.detail.char-preds :as char-preds]
             [paco.detail.error :as error]
+            [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
             [paco.detail.scanner :as scanner])
   #?(:clj (:import [clojure.lang MapEntry])))
@@ -37,31 +37,67 @@
   #?(:clj  (Long/parseLong s radix)
      :cljs (js/parseInt s radix)))
 
+(def slow-string-remainder
+  (let [unicode  (-> (p/repeat c/hex 4)
+                     c/skipped
+                     (p/pipe #(char (parse-int % 16))))
+        dispatch (p/alt (c/any-of "\"\\/")
+                        (c/char-return \b \backspace)
+                        (c/char-return \f \formfeed)
+                        (c/char-return \n \newline)
+                        (c/char-return \r \return)
+                        (c/char-return \t \tab)
+                        (p/then (c/skip-char \u) unicode))
+        escape   (p/then (c/skip-char \\) dispatch)
+        regular  (-> (char-preds/or_ (char-preds/among "\"\\")
+                                     char-preds/control?)
+                     char-preds/not_
+                     (c/match "regular character"))
+        char     (p/alt escape regular)
+        quote    (c/skip-char \")]
+    (fn [prefix]
+      (-> (c/strcat (p/return prefix) dispatch (p/* char))
+          (p/then-skip quote)))))
+
 (def string
-  (-> (p/alt (-> (c/skip-char \\)
-                 (p/then (p/alt (c/any-of "\"\\/")
-                                (c/char-return \b \backspace)
-                                (c/char-return \f \formfeed)
-                                (c/char-return \n \newline)
-                                (c/char-return \r \return)
-                                (c/char-return \t \tab)
-                                (-> (c/skip-char \u)
-                                    (p/then (-> (p/repeat c/hex 4)
-                                                (p/pipe (fn [chs]
-                                                          (-> (str/join chs)
-                                                              (parse-int 16)
-                                                              char)))))))))
-             (c/match (char-preds/not_ (char-preds/or_ (char-preds/among "\"\\") char-preds/control?))))
-      c/*str
-      (p/between (c/skip-char \"))))
+  (let [quote    (char-preds/eq \")
+        regular  (char-preds/not-among "\"\\")
+        expected (error/expected-input \")
+        pstring  (fn [scanner reply]
+                   ;; skip over start quote
+                   (scanner/skip! scanner)
+                   (let [start (scanner/index scanner)]
+                     (loop []
+                       (if (scanner/read-char-when! scanner regular)
+                         (recur)
+                         ;; found closing quote, escape sequence, or end
+                         (if-let [ch (scanner/peek scanner)]
+                           (let [s (scanner/read-from scanner start)]
+                             (scanner/skip! scanner)
+                             (if (= \" ch)
+                               (reply/ok reply s)
+                               (let [p (slow-string-remainder s)]
+                                 (parser/apply p scanner reply))))
+                           (reply/fail reply (error/merge error/unexpected-end expected)))))))]
+    (fn [scanner reply]
+      (if (scanner/matches-char-pred? scanner quote)
+        (pstring scanner reply)
+        (reply/fail reply expected)))))
 
 (comment
   (p/parse string "\"\"")
-  (p/parse string "\"foo\"")
-  (p/parse string "\"line 1\\nline 2\"")
+  (p/parse string "\"foobar\"")
+  (p/parse string "\"foo\\nbar\"")
+  (p/parse string "\"foo\\u0020bar\"")
+
+  "foo\u0020bar"
+
+  (p/parse string "\"")
+  (p/parse string "\"foo\\n\\xbar\"")
+  (p/parse string "\"foo\\u0020bar")
+
   ;;
   )
-
 (defn comma-sep [p]
   (p/*sep-by p (c/skip-char \,)))
 
@@ -167,6 +203,7 @@
   ;; inline: Execution time mean : 86,652540 ms
   ;; char-preds: Execution time mean : 74,400620 ms
   ;; skip-whitespace: Execution time mean : 50,419218 ms
+  ;; faster string: Execution time mean : 31,209764 ms
 
   ;; v0.1
   ;; Execution time mean : 202,187895 ms
@@ -174,6 +211,7 @@
   (criterium/quick-bench
    (p/parse json input {:line-tracking? false}))
   ;; Execution time mean : 135,796054 ms
+  ;; faster string: Execution time mean : 29,227533 ms
 
   ;;
   )
