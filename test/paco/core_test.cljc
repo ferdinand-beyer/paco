@@ -238,24 +238,24 @@
     (is (= ::error/nested (get-in reply [:error :type])))
     (is (= ::error/unexpected (get-in reply [:error :error :type])))))
 
-(deftest ?!-test
-  (let [reply (helper/run (p/?! helper/any))]
+(deftest ?attempt-test
+  (let [reply (helper/run (p/?attempt helper/any))]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
     (is (= error/unexpected-end (:error reply))))
 
-  (let [reply (helper/run (p/?! helper/any ::default))]
+  (let [reply (helper/run (p/?attempt helper/any ::default))]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (= ::default (:value reply))))
 
-  (let [reply (helper/run (p/?! (p/then helper/any helper/any)) "x")]
+  (let [reply (helper/run (p/?attempt (p/then helper/any helper/any)) "x")]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (= ::error/nested (get-in reply [:error :type]))))
 
-  (let [reply (helper/run (p/?! (p/then helper/any helper/any) ::default) "x")]
+  (let [reply (helper/run (p/?attempt (p/then helper/any helper/any) ::default) "x")]
     (is (:ok? reply))
     (is (= ::default (:value reply)))))
 

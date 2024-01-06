@@ -228,7 +228,7 @@
 ;; fparsec: >>=?, >>? (should be >>.?), .>>.?
 ;; These backtrack to the beginning if the second parser fails
 ;; "with a non‐fatal error and without changing the parser state"
-;; alternate names: try, ptry, recover, !, atomic
+;; alternate names: try, ptry, recover, !, atomic, unit
 (defn attempt [p]
   (reify parser/IParser
     (apply [_ scanner reply]
@@ -243,12 +243,12 @@
 
 ;; not to be confused with regex negative look-ahead (?!...)
 ;; alternate names: ?!, ?attempt, ?try
-(defn ?!
+(defn ?attempt
   "Applies `p`.  If `p` fails, `?!` will backtrack to the original state
    and succeed with `not-found` or `nil`.
 
-   `(?! p)` is an optimized implementation of `(? (attempt p))`."
-  ([p] (?! p nil))
+   `(?attempt p)` is an optimized implementation of `(? (attempt p))`."
+  ([p] (?attempt p nil))
   ([p not-found]
    (reify parser/IParser
      (apply [_ scanner reply]
