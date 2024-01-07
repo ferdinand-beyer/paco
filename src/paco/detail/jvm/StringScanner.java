@@ -4,7 +4,7 @@ import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class StringScanner implements CharScanner {
+public final class StringScanner implements ICharScanner {
 
     public final String input;
     private final int end;
@@ -49,7 +49,7 @@ public final class StringScanner implements CharScanner {
         return count;
     }
 
-    private static final class State implements ScannerState {
+    private static final class State implements IScannerState {
 
         public final int index;
 
@@ -69,12 +69,12 @@ public final class StringScanner implements CharScanner {
     }
 
     @Override
-    public boolean inState(ScannerState state) {
+    public boolean inState(IScannerState state) {
         return index == ((State) state).index;
     }
 
     @Override
-    public void backtrack(ScannerState state) {
+    public void backtrack(IScannerState state) {
         this.index = ((State) state).index;
     }
 
@@ -99,7 +99,7 @@ public final class StringScanner implements CharScanner {
     }
 
     @Override
-    public boolean matches(CharPredicate pred) {
+    public boolean satisfies(ICharPredicate pred) {
         return index < end && pred.test(input.charAt(index));
     }
 
@@ -125,20 +125,20 @@ public final class StringScanner implements CharScanner {
     }
 
     @Override
-    public int readCharWhen(CharPredicate pred) {
+    public int readCharWhen(ICharPredicate pred) {
         if (index < end) {
             final char ch = input.charAt(index);
             if (pred.test(ch)) {
                 ++index;
                 return ch;
             }
-            return NO_MATCH;
+            return MISMATCH;
         }
         return EOS;
     }
 
     @Override
-    public int skipCharsWhile(CharPredicate pred) {
+    public int skipCharsWhile(ICharPredicate pred) {
         int i = index;
         while (i < end && pred.test(input.charAt(i))) {
             ++i;

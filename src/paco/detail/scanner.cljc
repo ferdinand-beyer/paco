@@ -4,7 +4,7 @@
                :cljs [paco.detail.scanner.default :as default])
             #?(:clj [paco.detail.position :as pos]))
   #?@(:bb  []
-      :clj [(:import [paco.detail.jvm CharPredicate PacoScanner])]))
+      :clj [(:import [paco.detail.jvm ICharPredicate PacoScanner])]))
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -88,13 +88,13 @@
      :clj     (.readString ^PacoScanner scanner n)
      :default (default/read-str! scanner n)))
 
-(defn matches-char-pred?
+(defn satisfies-char-pred?
   #?(:clj {:inline (fn [scanner pred]
-                     `(.matches ~(tag scanner) ~(tag pred 'paco.detail.jvm.CharPredicate)))})
+                     `(.satisfies ~(tag scanner) ~(tag pred 'paco.detail.jvm.ICharPredicate)))})
   [scanner pred]
-  #?(:bb      (default/matches-char-pred? scanner pred)
-     :clj     (.matches ^PacoScanner scanner ^CharPredicate pred)
-     :default (default/matches-char-pred? scanner pred)))
+  #?(:bb      (default/satisfies-char-pred? scanner pred)
+     :clj     (.satisfies ^PacoScanner scanner ^ICharPredicate pred)
+     :default (default/satisfies-char-pred? scanner pred)))
 
 (defn matches-str?
   #?(:clj {:inline (fn [scanner s] `(.matchesString ~(tag scanner) ~s))})
@@ -130,16 +130,16 @@
    input stream."
   [scanner pred]
   #?(:bb      (default/read-char-when! scanner pred)
-     :clj     (let [ch (.readCharWhen ^PacoScanner scanner ^CharPredicate pred)]
+     :clj     (let [ch (.readCharWhen ^PacoScanner scanner ^ICharPredicate pred)]
                 (case ch -1 nil -2 false (char ch)))
      :default (default/read-char-when! scanner pred)))
 
 (defn skip-chars-while!
   #?(:clj {:inline (fn [scanner pred]
-                     `(.skipCharsWhile ~(tag scanner) ~(tag pred 'paco.detail.jvm.CharPredicate)))})
+                     `(.skipCharsWhile ~(tag scanner) ~(tag pred 'paco.detail.jvm.ICharPredicate)))})
   [scanner pred]
   #?(:bb      (default/skip-chars-while! scanner pred)
-     :clj     (.skipCharsWhile ^PacoScanner scanner ^CharPredicate pred)
+     :clj     (.skipCharsWhile ^PacoScanner scanner ^ICharPredicate pred)
      :default (default/skip-chars-while! scanner pred)))
 
 (defn read-from

@@ -20,7 +20,7 @@
 (defprotocol ICharScanner
   (peek-str [scanner n])
   (read-str! [scanner n])
-  (matches-char-pred? [scanner pred])
+  (satisfies-char-pred? [scanner pred])
   (matches-str? [scanner s])
   (matches-str-ci? [scanner s])
   (re-match [scanner re])
@@ -64,7 +64,7 @@
       (let [s (.substring input index* (Math/min (unchecked-add-int index* (int n)) end))]
         (set! index* (unchecked-add-int index* (count s)))
         s)))
-  (matches-char-pred? [_ pred]
+  (satisfies-char-pred? [_ pred]
     (and (< index* end) (pred (.charAt input index*))))
   (matches-str? [_ s]
     #?(:clj  (.regionMatches input index* s 0 (.length ^String s))
@@ -174,7 +174,7 @@
       (when-not (zero? (count s))
         (set! modcount* (unchecked-inc modcount*)))
       s))
-  (matches-char-pred? [_ pred] (matches-char-pred? scanner pred))
+  (satisfies-char-pred? [_ pred] (satisfies-char-pred? scanner pred))
   (matches-str? [_ s] (matches-str? scanner s))
   (matches-str-ci? [_ s] (matches-str-ci? scanner s))
   (re-match [_ re] (re-match scanner re))

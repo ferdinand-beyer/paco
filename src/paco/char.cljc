@@ -1,7 +1,7 @@
 (ns paco.char
   (:refer-clojure :exclude [char newline])
-  (:require [paco.core :as p]
-            [paco.detail.char-preds :as char-preds]
+  (:require [paco.char.preds :as preds]
+            [paco.core :as p]
             [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.parsers :as dp]
@@ -33,8 +33,8 @@
 
 (def skip-newline (newline-return nil))
 
-(defn- match-char [pred expected-error]
-  (let [pred (char-preds/pred pred)]
+(defn- satisfy-char [pred expected-error]
+  (let [pred (preds/pred pred)]
     (fn [scanner reply]
       (let [ch (scanner/read-char-when! scanner pred)]
         (if ch
@@ -44,16 +44,16 @@
                                            error/unexpected-end
                                            (error/unexpected-input (scanner/peek scanner))))))))))
 
-;; fparsec: satisfy; normalises newlines
-(defn match
+;; fparsec: normalises newlines
+(defn satisfy
   ([pred]
-   (match pred nil))
+   (satisfy pred nil))
   ([pred label]
-   (match-char pred (when label (error/expected label)))))
+   (satisfy-char pred (when label (error/expected label)))))
 
 ;; fparsec: pchar
 (defn char [ch]
-  (match-char (char-preds/eq ch) (error/expected-input ch)))
+  (satisfy-char (preds/eq ch) (error/expected-input ch)))
 
 (defn char-return [ch value]
   (p/return (char ch) value))
@@ -62,49 +62,55 @@
   ;; ? This is slower than `char` -- optimise?
   (char-return ch nil))
 
-;; fparsec: + skipAnyChar
 (def any-char p/any-token)
+(def skip-any-char p/skip-any-token)
 
 ;; fparsec: + skip variants
 (defn any-of [chars]
-  (match-char (char-preds/among chars) (map error/expected-input (set chars))))
+  (satisfy-char (preds/among chars) (map error/expected-input (set chars))))
 
 (defn none-of [chars]
   ;; TODO: error message: (expected "any char not in ...")
-  (match-char (char-preds/not-among chars) nil))
+  (satisfy-char (preds/not-among chars) nil))
 
 (defn char-range
   ([min-ch max-ch]
    (char-range min-ch max-ch nil))
   ([min-ch max-ch label]
-   (match (char-preds/in-range min-ch max-ch) label)))
+   (satisfy (preds/in-range min-ch max-ch) label)))
 
 (def ascii-upper
-  (match char-preds/ascii-upper? "ASCII upper-case letter"))
+  (satisfy preds/ascii-upper? "ASCII upper-case letter"))
 
 (def ascii-lower
-  (match char-preds/ascii-lower? "ASCII lower-case letter"))
+  (satisfy preds/ascii-lower? "ASCII lower-case letter"))
 
 (def ascii-letter
-  (match char-preds/ascii-letter? "ASCII letter"))
+  (satisfy preds/ascii-letter? "ASCII letter"))
 
 (def upper
-  (match char-preds/upper? "upper-case letter"))
+  "Parses an upper-case letter character."
+  (satisfy preds/upper? "upper-case letter"))
 
 (def lower
-  (match char-preds/lower? "lower-case letter"))
+  "Parses a lower-case letter character."
+  (satisfy preds/lower? "lower-case letter"))
 
 (def letter
-  (match char-preds/letter? "letter"))
+  "Parses a letter character."
+  (satisfy preds/letter? "letter"))
 
 (def digit
-  (match char-preds/digit? "decimal digit"))
+  "Parses a decimal digit."
+  (satisfy preds/digit? "decimal digit"))
 
 (def hex
-  (match char-preds/hex? "hexadecimal digit"))
+  "Parses a hexadecimal digit."
+  (satisfy preds/hex? "hexadecimal digit"))
 
 (def octal
-  (match char-preds/octal? "octal digit"))
+  "Parses an octal digit."
+  (satisfy preds/octal? "octal digit"))
 
 ;; fparsec: tab
 ;; fparsec: newline, skipNewline, newlineReturn + unicode variants
@@ -162,19 +168,19 @@
 ;; fparsec: manySatisfy2 -- different pred for first character
 ;; fparsec: many1Satisfy: one or more
 ;; fparsec: manyMinMaxSatisfy
-(defn *match
+(defn *satisfy
   "Parses a sequence of zero or more characters satisfying `pred`,
    and returns them as a string."
   [pred]
-  (let [pred (char-preds/pred pred)]
+  (let [pred (preds/pred pred)]
     (fn [scanner reply]
       (let [start (scanner/index scanner)
             value (when (pos? (scanner/skip-chars-while! scanner pred))
                     (scanner/read-from scanner start))]
         (reply/ok reply value)))))
 
-(defn *skip-match [pred]
-  (let [pred (char-preds/pred pred)]
+(defn *skip-satisfy [pred]
+  (let [pred (preds/pred pred)]
     (fn [scanner reply]
       (scanner/skip-chars-while! scanner pred)
       (reply/ok reply nil))))
@@ -206,7 +212,7 @@
   (dp/repeat-min `+str p rfs/string 1))
 
 (defn strcat [& ps]
-  (dp/pseq ps rfs/string))
+  (dp/reduce ps rfs/string))
 
 (defn skipped [p]
   (reify parser/IParser

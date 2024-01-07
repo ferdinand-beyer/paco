@@ -3,10 +3,10 @@ package paco.detail.jvm;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
-public interface CharScanner extends Scanner {
+public interface ICharScanner extends IScanner {
 
     int EOS = -1;
-    int NO_MATCH = -2;
+    int MISMATCH = -2;
 
     int peekChar();
 
@@ -14,7 +14,7 @@ public interface CharScanner extends Scanner {
 
     String readString(int n);
 
-    boolean matches(CharPredicate pred);
+    boolean satisfies(ICharPredicate pred);
 
     boolean matchesString(String s);
 
@@ -22,9 +22,9 @@ public interface CharScanner extends Scanner {
 
     MatchResult matchRegex(Pattern re);
 
-    int readCharWhen(CharPredicate pred);
+    int readCharWhen(ICharPredicate pred);
 
-    int skipCharsWhile(CharPredicate pred);
+    int skipCharsWhile(ICharPredicate pred);
 
     String readFrom(int start);
 }

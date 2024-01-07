@@ -1,5 +1,5 @@
 package paco.detail.jvm;
 
-public interface ScannerState {
+public interface IScannerState {
     int index();
 }

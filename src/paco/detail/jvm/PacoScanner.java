@@ -4,20 +4,20 @@ import java.util.Objects;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
-public class PacoScanner implements LineTrackingScanner, UserStateScanner {
+public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
 
-    protected final Scanner scanner;
+    protected final IScanner scanner;
 
     private Object userState;
     protected long modCount;
 
-    protected PacoScanner(Scanner scanner, Object userState) {
+    protected PacoScanner(IScanner scanner, Object userState) {
         this.scanner = Objects.requireNonNull(scanner);
         this.userState = userState;
         this.modCount = 0L;
     }
 
-    public static PacoScanner of(Scanner scanner, Object userState) {
+    public static PacoScanner of(IScanner scanner, Object userState) {
         return new PacoScanner(scanner, userState);
     }
 
@@ -68,13 +68,13 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
         return untrackedSkip(n);
     }
 
-    protected static final class State implements ScannerState {
+    protected static final class State implements IScannerState {
 
-        public final ScannerState scannerState;
+        public final IScannerState scannerState;
         public final long modCount;
         public final Object userState;
 
-        public State(ScannerState scannerState, long modCount, Object userState) {
+        public State(IScannerState scannerState, long modCount, Object userState) {
             this.scannerState = scannerState;
             this.modCount = modCount;
             this.userState = userState;
@@ -87,25 +87,25 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     }
 
     @Override
-    public final ScannerState state() {
+    public final IScannerState state() {
         return new State(scanner.state(), modCount, userState);
     }
 
     @Override
-    public final boolean inState(ScannerState state) {
+    public final boolean inState(IScannerState state) {
         return modCount == ((State) state).modCount;
     }
 
     @Override
-    public void backtrack(ScannerState state) {
+    public void backtrack(IScannerState state) {
         final State s = (State) state;
         scanner.backtrack(s.scannerState);
         modCount = s.modCount;
         userState = s.userState;
     }
 
-    protected final CharScanner charScanner() {
-        return (CharScanner) scanner;
+    protected final ICharScanner charScanner() {
+        return (ICharScanner) scanner;
     }
 
     @Override
@@ -128,8 +128,8 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     }
 
     @Override
-    public final boolean matches(CharPredicate pred) {
-        return charScanner().matches(pred);
+    public final boolean satisfies(ICharPredicate pred) {
+        return charScanner().satisfies(pred);
     }
 
     @Override
@@ -148,12 +148,12 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     }
 
     @Override
-    public int readCharWhen(CharPredicate pred) {
+    public int readCharWhen(ICharPredicate pred) {
         return modifiedUnlessNegative(charScanner().readCharWhen(pred));
     }
 
     @Override
-    public int skipCharsWhile(CharPredicate pred) {
+    public int skipCharsWhile(ICharPredicate pred) {
         return modifiedUnlessZero(charScanner().skipCharsWhile(pred));
     }
 
@@ -168,7 +168,7 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
     }
 
     @Override
-    public void backtrackModified(ScannerState state) {
+    public void backtrackModified(IScannerState state) {
         final State s = (State) state;
         scanner.backtrack(s.scannerState);
         modCount++;
@@ -207,7 +207,7 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
 
         private final LineTracker lineTracker;
 
-        WithLineTracking(Scanner scanner, Object userState) {
+        WithLineTracking(IScanner scanner, Object userState) {
             super(scanner, userState);
             this.lineTracker = new LineTracker();
         }
@@ -237,8 +237,8 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
         }
 
         @Override
-        public int readCharWhen(CharPredicate pred) {
-            final CharScanner scanner = charScanner();
+        public int readCharWhen(ICharPredicate pred) {
+            final ICharScanner scanner = charScanner();
             final int ch = scanner.readCharWhen(pred);
             if (ch >= 0) {
                 modCount++;
@@ -248,7 +248,7 @@ public class PacoScanner implements LineTrackingScanner, UserStateScanner {
         }
 
         @Override
-        public final int skipCharsWhile(CharPredicate pred) {
+        public final int skipCharsWhile(ICharPredicate pred) {
             return modifiedUnlessZero(lineTracker.skipCharsWhile(charScanner(), pred));
         }
     }

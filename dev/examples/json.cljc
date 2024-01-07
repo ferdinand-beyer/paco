@@ -1,8 +1,8 @@
 (ns examples.json
   (:refer-clojure :exclude [array])
   (:require [paco.char :as c]
+            [paco.char.preds :as preds]
             [paco.core :as p]
-            [paco.detail.char-preds :as char-preds]
             [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
@@ -10,7 +10,7 @@
   #?(:clj (:import [clojure.lang MapEntry])))
 
 (def skip-whitespace
-  (c/*skip-match (char-preds/among " \r\n\t")))
+  (c/*skip-satisfy (preds/among " \r\n\t")))
 
 (defn number [scanner reply]
   (if-let [m (scanner/re-match scanner #"-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
@@ -40,7 +40,7 @@
 (def slow-string-remainder
   (let [unicode  (-> (p/repeat c/hex 4)
                      c/skipped
-                     (p/pipe #(char (parse-int % 16))))
+                     (p/map #(char (parse-int % 16))))
         dispatch (p/alt (c/any-of "\"\\/")
                         (c/char-return \b \backspace)
                         (c/char-return \f \formfeed)
@@ -49,10 +49,8 @@
                         (c/char-return \t \tab)
                         (p/then (c/skip-char \u) unicode))
         escape   (p/then (c/skip-char \\) dispatch)
-        regular  (-> (char-preds/or_ (char-preds/among "\"\\")
-                                     char-preds/control?)
-                     char-preds/not_
-                     (c/match "regular character"))
+        regular  (-> (preds/not (preds/or (preds/among "\"\\") preds/control?))
+                     (c/satisfy "regular character"))
         char     (p/alt escape regular)
         quote    (c/skip-char \")]
     (fn [prefix]
@@ -60,8 +58,8 @@
           (p/then-skip quote)))))
 
 (def string
-  (let [quote    (char-preds/eq \")
-        regular  (char-preds/not-among "\"\\")
+  (let [quote    (preds/eq \")
+        regular  (preds/not-among "\"\\")
         expected (error/expected-input \")
         pstring  (fn [scanner reply]
                    ;; skip over start quote
@@ -80,24 +78,10 @@
                                  (parser/apply p scanner reply))))
                            (reply/fail reply (error/merge error/unexpected-end expected)))))))]
     (fn [scanner reply]
-      (if (scanner/matches-char-pred? scanner quote)
+      (if (scanner/satisfies-char-pred? scanner quote)
         (pstring scanner reply)
         (reply/fail reply expected)))))
 
-(comment
-  (p/parse string "\"\"")
-  (p/parse string "\"foobar\"")
-  (p/parse string "\"foo\\nbar\"")
-  (p/parse string "\"foo\\u0020bar\"")
-
-  "foo\u0020bar"
-
-  (p/parse string "\"")
-  (p/parse string "\"foo\\n\\xbar\"")
-  (p/parse string "\"foo\\u0020bar")
-
-  ;;
-  )
 (defn comma-sep [p]
   (p/*sep-by p (c/skip-char \,)))
 
@@ -105,7 +89,7 @@
 
 (def array
   (-> skip-whitespace
-      (p/then (comma-sep (p/lazy value)))
+      (p/then (comma-sep (p/fwd value)))
       (p/between (c/skip-char \[) (c/skip-char \]))))
 
 (comment
@@ -114,33 +98,26 @@
   )
 
 (def object-entry
-  (p/with [_ skip-whitespace
-           k string
-           _ skip-whitespace
-           _ (c/skip-char \:)
-           v value]
-    (p/return (MapEntry. k v))))
+  (p/map (p/then skip-whitespace string)
+         (p/then skip-whitespace (c/skip-char \:) (p/fwd value))
+         #(MapEntry. %1 %2)))
 
 (def object
-  (p/with [_ (c/skip-char \{)
-           _ skip-whitespace
-           entries (comma-sep object-entry)
-           _ (c/skip-char \})]
-    (p/return (into {} entries))))
+  (-> skip-whitespace
+      (p/then (comma-sep object-entry))
+      (p/map #(into {} %))
+      (p/between (c/char \{) (c/char \}))))
 
 (def value
-  (let [value (p/alts [string
-                       number
-                       object
-                       array
-                       (c/string-return "true" true)
-                       (c/string-return "false" false)
-                       (c/string-return "null" nil)]
-                      "value")]
-    (p/with [_ skip-whitespace
-             v value
-             _ skip-whitespace]
-      (p/return v))))
+  (-> (p/alts [string
+               number
+               object
+               array
+               (c/string-return "true" true)
+               (c/string-return "false" false)
+               (c/string-return "null" nil)]
+              "value")
+      (p/between skip-whitespace)))
 
 (def json (p/then-skip value p/end))
 
@@ -171,7 +148,7 @@
 
   (p/parse json "  ")
   (p/parse json "[1 2]")
-  (p/parse (p/alt (p/attempt number) string) "1.")
+  (p/parse (p/alt (p/atomic number) string) "1.")
   (p/parse json "19")
   (p/parse json "[1, 2, false, null]")
   (p/parse json "{\"foo\": 19, \"bar\" : false, \"x\": [\"y\"]}")
@@ -204,6 +181,7 @@
   ;; char-preds: Execution time mean : 74,400620 ms
   ;; skip-whitespace: Execution time mean : 50,419218 ms
   ;; faster string: Execution time mean : 31,209764 ms
+  ;; avoid bind: Execution time mean : 26,639856 ms
 
   ;; v0.1
   ;; Execution time mean : 202,187895 ms
@@ -212,6 +190,7 @@
    (p/parse json input {:line-tracking? false}))
   ;; Execution time mean : 135,796054 ms
   ;; faster string: Execution time mean : 29,227533 ms
+  ;; avoid bind: Execution time mean : 23,530859 ms
 
   ;;
   )

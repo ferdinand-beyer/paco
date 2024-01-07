@@ -8,13 +8,13 @@
   (require '[paco.char :as c]
            '[paco.core :as p])
 
-  (p/parse (p/pipe (c/char \1)
-                   (c/char \2)
-                   (c/char \3)
-                   (c/char \4)
-                   (c/char \5)
-                   (fn [& args]
-                     (zipmap args [:a :b :c :d :e :f :g])))
+  (p/parse (p/map (c/char \1)
+                  (c/char \2)
+                  (c/char \3)
+                  (c/char \4)
+                  (c/char \5)
+                  (fn [& args]
+                    (zipmap args [:a :b :c :d :e :f :g])))
            "12345678")
 
   (p/parse (p/then (c/string "Just")
@@ -43,8 +43,8 @@
                   (c/string "bar"))
            "foobuzz")
 
-  (p/parse (p/attempt (p/cat (c/string "foo")
-                             (c/string "bar")))
+  (p/parse (p/atomic (p/cat (c/string "foo")
+                            (c/string "bar")))
            "foobuzz")
 
   (p/parse (p/cat (c/string "foo")
@@ -57,12 +57,12 @@
                      (c/string "bar"))
            "foobar")
 
-  (p/parse (p/group (c/string "foo")
+  (p/parse (p/tuple (c/string "foo")
                     (p/cat (c/string "bu")
                            (c/string "zz")))
            "foobuzz")
 
-  (p/parse (c/match #{\a \b \c} "abc")
+  (p/parse (c/satisfy #{\a \b \c} "abc")
            "x")
 
   (p/parse (c/any-of "abc") "x")
@@ -70,13 +70,13 @@
   (p/parse (p/cat (p/alt (c/string "foo")
                          (p/cat
                           (c/string "bar")
-                          (c/match #{\1 \2 \3 \4 \5 \6 \7 \8 \9 \0}
-                            "digit")))
+                          (c/satisfy #{\1 \2 \3 \4 \5 \6 \7 \8 \9 \0}
+                                     "digit")))
                   (c/string "buzz"))
            "barbuzz")
 
   (p/parse (-> (c/string "42")
-               (p/as "the answer to life, the universe, and everything"))
+               (p/label "the answer to life, the universe, and everything"))
            "x")
 
   (p/parse (p/? (c/string "foo"))
@@ -132,41 +132,41 @@
                   (c/string "foox"))
            "foox")
 
-  (p/parse (p/cat (p/?attempt (p/cat (c/string "foo")
-                                     (c/string "bar")))
-                  (c/string "foox"))
-           "foox")
-
-  (p/parse (p/cat (p/? (p/attempt (p/cat (c/string "foo")
-                                         (c/string "bar"))))
-                  (c/string "foox"))
-           "foox")
-
-  (let [p (p/cat (p/?attempt (p/cat (c/string "foo")
+  (p/parse (p/cat (p/?atomic (p/cat (c/string "foo")
                                     (c/string "bar")))
-                 (c/string "foox"))]
-    (criterium/quick-bench
-     (p/parse p "foox")))
-
-  (let [p (p/cat (p/? (p/attempt (p/cat (c/string "foo")
-                                        (c/string "bar"))))
-                 (c/string "foox"))]
-    (criterium/quick-bench
-     (p/parse p "foox")))
-
-  (p/parse (p/as! (p/cat (c/string "foo")
-                         (c/string "bar"))
-                  "foobar")
+                  (c/string "foox"))
            "foox")
-  (p/parse (p/as! (p/cat (c/string "foo")
-                         (p/attempt (c/string "bar")))
-                  "foobar")
+
+  (p/parse (p/cat (p/? (p/atomic (p/cat (c/string "foo")
+                                        (c/string "bar"))))
+                  (c/string "foox"))
+           "foox")
+
+  (let [p (p/cat (p/?atomic (p/cat (c/string "foo")
+                                   (c/string "bar")))
+                 (c/string "foox"))]
+    (criterium/quick-bench
+     (p/parse p "foox")))
+
+  (let [p (p/cat (p/? (p/atomic (p/cat (c/string "foo")
+                                       (c/string "bar"))))
+                 (c/string "foox"))]
+    (criterium/quick-bench
+     (p/parse p "foox")))
+
+  (p/parse (p/label-compound (p/cat (c/string "foo")
+                                    (c/string "bar"))
+                             "foobar")
+           "foox")
+  (p/parse (p/label-compound (p/cat (c/string "foo")
+                                    (p/atomic (c/string "bar")))
+                             "foobar")
            "foox")
 
   (p/parse (-> (c/char \a)
                (p/*skip)
                (p/cat (c/char \b))
-               (p/pipe first))
+               (p/map first))
            "aaaaaaaaaab")
 
 ;;

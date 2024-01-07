@@ -1,37 +1,41 @@
 (ns paco.detail.rfs
   "Reducing functions."
+  (:refer-clojure :exclude [first last vector])
   #?(:cljs (:import [goog.string StringBuffer])))
 
 (def ignore
   "Ignores all args and returns `nil`.  Useful for skip parsers."
   (constantly nil))
 
-(defn rvec
+(defn vector
   "Reducing function that collects input in a vector.
    Like `conj!`, but completes with a persistent collection."
   ([] (transient []))
   ([coll] (persistent! coll))
   ([coll x] (conj! coll x)))
 
-(defn rlast
+(defn first
+  "Reducing function that only keeps the first input."
+  ([] ::init)
+  ([result] (when-not (= ::init result)
+              result))
+  ([result input] (if (= ::init result)
+                    input
+                    result)))
+
+(defn last
   "Reducing function that only keeps the last input."
   ([] nil)
   ([result] result)
   ([_ input] input))
 
-(defn rfirst
-  "Reducing function that only keeps the first input."
-  ([] nil)
-  ([result] (first result))
-  ([result input] (if (nil? result)
-                    (list input)
-                    result)))
-
 (def ^:private ^:const seqex-tag ::seqex)
 (def ^:private ^:const seqex-meta {seqex-tag true})
 
 (defn seqex
-  "Reducing function for 'sequence expression' parsers."
+  "Reducing function for 'sequence expression' parsers.
+
+   Nested seqex collections are flattened."
   ([] (transient []))
   ([xs]
    (-> xs

@@ -77,9 +77,9 @@
     (is (not (:changed? reply)))
     (is (= #{(error/unexpected-input \0) (error/expected "1-9")} (:messages reply)))))
 
-(deftest match-test
-  (is (= \x (p/parse (c/match #(= \x %)) "xyz")))
-  (let [reply (helper/run (c/match #(= \x %) "the letter X"))]
+(deftest satisfy-test
+  (is (= \x (p/parse (c/satisfy #(= \x %)) "xyz")))
+  (let [reply (helper/run (c/satisfy #(= \x %) "the letter X"))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= #{(error/expected "the letter X") error/unexpected-end} (:messages reply)))))

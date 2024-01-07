@@ -110,7 +110,7 @@
 
 ;; ## Parse token ##
 
-(bench-paco (c/match #(= \a %)) "abc")
+(bench-paco (c/satisfy #(= \a %)) "abc")
 ;             Execution time mean : 70,992962 ns
 ;    Execution time std-deviation : 4,885139 ns
 ;   Execution time lower quantile : 67,366876 ns ( 2,5%)
@@ -259,7 +259,7 @@
 
 ;; ## Parse `many` for long input ##
 
-(bench-paco (p/* (c/match #(= \a %))) -input-10000)
+(bench-paco (p/* (c/satisfy #(= \a %))) -input-10000)
 ;             Execution time mean : 356,890924 µs
 ;    Execution time std-deviation : 5,169162 µs
 ;   Execution time lower quantile : 351,230010 µs ( 2,5%)
@@ -339,7 +339,7 @@
 
 ;; ## Wrap with `expecting` ##
 
-(bench-paco (-> (p/return :x) (p/as "x")) "")
+(bench-paco (-> (p/return :x) (p/label "x")) "")
 ;             Execution time mean : 78,954855 ns
 ;    Execution time std-deviation : 7,143476 ns
 ;   Execution time lower quantile : 74,021075 ns ( 2,5%)

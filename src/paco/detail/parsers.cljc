@@ -1,39 +1,36 @@
 (ns paco.detail.parsers
   "Advanced low-level parsers, used by higher level ones."
+  (:refer-clojure :exclude [reduce])
   (:require [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
-            [paco.detail.rfs :as rfs]
             [paco.detail.scanner :as scanner])
   #?(:cljs (:require-macros [paco.detail.parsers])))
 
-(defn pseq
-  ([ps]
-   (pseq ps rfs/rvec))
-  ([ps rf]
-   (let [ps (vec ps)]
-     (reify parser/IParser
-       (apply [_ scanner reply]
-         (loop [i 0
-                result (rf)
-                modcount (scanner/modcount scanner)
-                error nil]
-           (if (< i (count ps))
-             (let [p (get ps i)
-                   reply (parser/apply p scanner reply)
-                   modcount* (scanner/modcount scanner)]
-               (if (reply/ok? reply)
-                 (recur (unchecked-inc i)
-                        (rf result (reply/value reply))
-                        modcount*
-                        (if (= modcount modcount*)
-                          (error/merge error (reply/error reply))
-                          (reply/error reply)))
-                 (if (= modcount modcount*)
-                   (reply/with-error reply (error/merge error (reply/error reply)))
-                   reply)))
-             (reply/with-value reply (rf result)))))
-       (children [_] ps)))))
+(defn reduce [ps rf]
+  (let [ps (vec ps)]
+    (reify parser/IParser
+      (apply [_ scanner reply]
+        (loop [i 0
+               result (rf)
+               modcount (scanner/modcount scanner)
+               error nil]
+          (if (< i (count ps))
+            (let [p (get ps i)
+                  reply (parser/apply p scanner reply)
+                  modcount* (scanner/modcount scanner)]
+              (if (reply/ok? reply)
+                (recur (unchecked-inc i)
+                       (rf result (reply/value reply))
+                       modcount*
+                       (if (= modcount modcount*)
+                         (error/merge error (reply/error reply))
+                         (reply/error reply)))
+                (if (= modcount modcount*)
+                  (reply/with-error reply (error/merge error (reply/error reply)))
+                  reply)))
+            (reply/with-value reply (rf result)))))
+      (children [_] ps))))
 
 (defn- emit-apply-seq
   "Emits code that will apply the parsers `ps` in sequence
@@ -90,7 +87,6 @@
          ~(emit-apply-seq ps 'scanner 'reply bfs body))
        (~'children [~'_] [~@ps]))))
 
-;; Like pseq, but unrolled
 (defmacro with-seq
   "Creates a parser that applies parsers in sequence and transforms
    the return values."
@@ -98,15 +94,15 @@
   [bindings & body]
   (emit-with-seq bindings body))
 
+;;---------------------------------------------------------
+;; Repeat parsers
+
 (defn- infinite-loop-exception [sym p scanner]
   (ex-info (str "Parser supplied to '" sym "' succeeded without changing the parser state")
            {:type ::infinite-loop
             :parser p
             :combinator sym
             :position (scanner/position scanner)}))
-
-;;---------------------------------------------------------
-;; Repeat parsers
 
 (defn- apply-many [sym p rf scanner reply result]
   (loop [result result
@@ -279,6 +275,7 @@
 ;;---------------------------------------------------------
 ;; Until
 
+;; Similar to fparsec's Inline.ManyTill
 (defn until
   [sym p pend rf empty-ok? include-end?]
   (letfn [(apply-until [scanner reply result modcount error]

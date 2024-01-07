@@ -1,12 +1,12 @@
 (ns paco.core
-  (:refer-clojure :exclude [* + cat max min not-empty ref repeat sequence])
+  (:refer-clojure :exclude [* + cat deref map max min not-empty ref repeat sequence])
   (:require [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
             [paco.detail.scanner :as scanner])
-  #?(:cljs (:require-macros [paco.core])))
+  #?(:cljs (:require-macros [paco.core :refer [fwd]])))
 
 (defn- result-data [scanner reply]
   {:ok?        (reply/ok? reply)
@@ -66,6 +66,11 @@
       (reply/ok reply token))
     (reply/fail reply (error/unexpected-token-or-end scanner))))
 
+(defn skip-any-token [scanner reply]
+  (if (pos? (scanner/skip! scanner))
+    (reply/ok reply nil)
+    (reply/fail reply (error/unexpected-token-or-end scanner))))
+
 (defn token-return [token value]
   (let [expected (error/expected-input token)]
     (fn [scanner reply]
@@ -115,7 +120,8 @@
   (emit-with bindings body))
 
 ;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
-(defn pipe
+;; alternative names: map, fmap, pmap
+(defn map
   ([p f]
    (dp/with-seq [x p] (f x)))
   ([p1 p2 f]
@@ -125,26 +131,24 @@
   ([p1 p2 p3 p4 & more]
    (let [ps (list* p1 p2 p3 p4 (butlast more))
          f  (last more)]
-     (dp/pseq ps (completing conj #(apply f %))))))
+     (dp/reduce ps (completing conj #(apply f %))))))
 
-;; alternative names: pseq, sq, tup (tuple), grp (group), group-all
-(defn sequence
-  "Applies the parsers `ps` in sequence and returns a collection of
+(defn tuple*
+  "Applies the parsers `ps` in sequence and returns a vector of
    their return values."
   [ps]
-  (dp/pseq ps))
+  (dp/reduce ps rfs/vector))
 
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
-;; alternative names: tuple
-(defn group
+(defn tuple
   ([p]
-   (pipe p vector))
+   (map p vector))
   ([p1 p2]
-   (pipe p1 p2 vector))
+   (map p1 p2 vector))
   ([p1 p2 p3]
-   (pipe p1 p2 p3 vector))
+   (map p1 p2 p3 vector))
   ([p1 p2 p3 p4 & more]
-   (sequence (list* p1 p2 p3 p4 more))))
+   (tuple* (list* p1 p2 p3 p4 more))))
 
 ;; fparsec: >>.
 ;; parsesso: after
@@ -156,7 +160,7 @@
   ([p1 p2 p3]
    (dp/with-seq [_ p1, _ p2, x p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/pseq (list* p1 p2 p3 p4 more) rfs/rlast)))
+   (dp/reduce (list* p1 p2 p3 p4 more) rfs/last)))
 
 ;; fparsec: .>>
 (defn then-skip
@@ -167,7 +171,7 @@
   ([p1 p2 p3]
    (dp/with-seq [x p1, _ p2, _ p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/pseq (list* p1 p2 p3 p4 more) rfs/rfirst)))
+   (dp/reduce (list* p1 p2 p3 p4 more) rfs/first)))
 
 ;; fparsetc: .>>.: like (cat p1 p2)
 
@@ -186,8 +190,7 @@
       (reply/fail reply error))))
 
 ;; fparsec: <?>
-;; alternate name: label
-(defn as
+(defn label
   "If `p` does not change the parser state, the errors are
    replaced with `(expected label)."
   [p label]
@@ -202,7 +205,8 @@
       (children [_] [p]))))
 
 ;; fparsec: <??>
-(defn as! [p label]
+(defn label-compound
+  [p label]
   (let [expected-error (error/expected label)]
     (reify parser/IParser
       (apply [_ scanner reply]
@@ -229,7 +233,12 @@
 ;; These backtrack to the beginning if the second parser fails
 ;; "with a non‐fatal error and without changing the parser state"
 ;; alternate names: try, ptry, recover, !, atomic, unit
-(defn attempt [p]
+;; TODO: Add an arity (atomic p label) for (atomic (labelc p label))
+(defn atomic
+  "Returns a parser that behaves like `p`, except that it backtracks to
+   the original parser state when `p` fails with changing the parser
+   state."
+  [p]
   (reify parser/IParser
     (apply [_ scanner reply]
       (let [state (scanner/state scanner)
@@ -241,14 +250,12 @@
             (reply/fail reply error)))))
     (children [_] [p])))
 
-;; not to be confused with regex negative look-ahead (?!...)
-;; alternate names: ?!, ?attempt, ?try
-(defn ?attempt
-  "Applies `p`.  If `p` fails, `?!` will backtrack to the original state
-   and succeed with `not-found` or `nil`.
+(defn ?atomic
+  "Returns a parser that applies `p` and if `p` fails, backtracks to the
+   original state and _succeeds_ with value `not-found` (default: `nil`).
 
-   `(?attempt p)` is an optimized implementation of `(? (attempt p))`."
-  ([p] (?attempt p nil))
+   `(?atomic p)` is an optimized implementation of `(? (atomic p))`."
+  ([p] (?atomic p nil))
   ([p not-found]
    (reify parser/IParser
      (apply [_ scanner reply]
@@ -265,7 +272,8 @@
 
 ;; TODO
 ;; Maybe two variants: All errors and only when changed state (`catch` and `catch!`)
-;; `attempt` could be: `(catch p #(fail-with error))`
+;; on-error: (f scanner reply original-state) => detail
+;; variant: on-error-apply: backtrack and fall back to another one?
 ;; alternate names: except
 #_(defn catch
     "When `p` fails, backtracks and resumes with the parser returned by
@@ -275,6 +283,7 @@
 ;;---------------------------------------------------------
 ;; Parsing alternatives
 
+;; ? Move to detail.parsers?
 (defn- alt2
   ([p1 p2]
    (alt2 p1 p2 true))
@@ -311,9 +320,9 @@
    (if-let [p (first ps)]
      (reduce alt2 p (next ps))
      pnil))
-  ([ps label]
+  ([ps label']
    (if-let [p (first ps)]
-     (as (reduce #(alt2 %1 %2 false) p (next ps)) label)
+     (label (reduce #(alt2 %1 %2 false) p (next ps)) label')
      pnil)))
 
 ;;---------------------------------------------------------
@@ -371,7 +380,7 @@
        (children [_] [p])))))
 
 ;; fparsec: lookAhead
-;; names: ?=, ?!, ?<=, ?<!
+;; alternate names: peek; ?=, ?!, ?<=, ?<!
 (defn look-ahead
   [p]
   (reify parser/IParser
@@ -394,13 +403,15 @@
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
 
-(defn cats [ps]
-  (dp/pseq ps rfs/seqex))
+;;? Add a fn to treat a sequex as one unit to prevent flattening?
+
+(defn cat* [ps]
+  (dp/reduce ps rfs/seqex))
 
 (defn cat [& ps]
-  (dp/pseq ps rfs/seqex))
+  (dp/reduce ps rfs/seqex))
 
-;; alternative names: opt, maybe
+;; alternative names: opt
 (defn ?
   "Optional: zero or one."
   ([p]
@@ -440,10 +451,10 @@
   (dp/repeat-max `max p rfs/seqex n))
 
 (defn *sep-by [p sep]
-  (dp/sep `*sep-by p sep rfs/rvec true false))
+  (dp/sep `*sep-by p sep rfs/vector true false))
 
 (defn +sep-by [p sep]
-  (dp/sep `+sep-by p sep rfs/rvec false false))
+  (dp/sep `+sep-by p sep rfs/vector false false))
 
 (defn *skip-sep-by [p sep]
   (dp/sep `*skip-sep-by p sep rfs/ignore true false))
@@ -452,10 +463,10 @@
   (dp/sep `+skip-sep-by p sep rfs/ignore false false))
 
 (defn *sep-end-by [p sep]
-  (dp/sep `*sep-end-by p sep rfs/rvec true true))
+  (dp/sep `*sep-end-by p sep rfs/vector true true))
 
 (defn +sep-end-by [p sep]
-  (dp/sep `+sep-end-by p sep rfs/rvec false true))
+  (dp/sep `+sep-end-by p sep rfs/vector false true))
 
 (defn *skip-sep-end-by [p sep]
   (dp/sep `*skip-sep-end-by p sep rfs/ignore true true))
@@ -466,41 +477,48 @@
 ;; fparsec: manyTill + variants
 
 (defn *until [p endp]
-  (dp/until `*until p endp rfs/rvec true false))
+  (dp/until `*until p endp rfs/vector true false))
 
 (defn +until [p endp]
-  (dp/until `+until p endp rfs/rvec false false))
+  (dp/until `+until p endp rfs/vector false false))
 
 ;; fparsec: chainl, chainr, + variants
 
 ;;---------------------------------------------------------
-;; Lazy / recursive
+;; Forwarding / lazy / recursive
+
+(defmacro fwd
+  "Returns a parser that forwards to `expr`.  Useful for recursive parsers
+   to use a parser that has been declared but not yet defined:
+
+   ```clojure
+   (def expr (p/alt c/digit
+                    (p/between (p/fwd expr) (c/char \\() (c/char \\)))))
+   ```
+
+   **Warning**: Left-recursive parsers are not supported and will lead to
+   infinite loops / stack overflows."
+  [expr]
+  `(reify parser/IParser
+     (~'apply [~'_ scanner# reply#]
+       (parser/apply ~expr scanner# reply#))
+     (~'children [~'_] [~expr])))
 
 (defn pforce
-  "Forces the delay `d` on-demand, which should yield a parser
-   that is applied in its stead."
+  "Returns a parser that forwards to ``."
   [d]
-  (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [p (force d)]
-        (parser/apply p scanner reply)))
-    (children [_] [(force d)])))
+  (fwd (force d)))
 
-;; alternate name: pdelay
+;; alternate name: pdelay, delay, defer
 (defmacro lazy [& body]
   `(pforce (delay ~@body)))
 
 ;; fparsec: createParserForwardedToRef
-;; alternate name: pderef
-(defn ref
+(defn deref
   "Returns a parser that forwards all calls to the parser returned
    by `@ref`.  Useful to construct recursive parsers."
   [ref]
-  (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [p @ref]
-        (parser/apply p scanner reply)))
-    (children [_] [@ref])))
+  (fwd @ref))
 
 (defn rec
   "Creates a recursive parser.  Calls `f` with one arg, a parser to recur,
@@ -510,7 +528,7 @@
    recursion."
   [f]
   (let [vol (volatile! pnil)]
-    (vreset! vol (f (ref vol)))))
+    (vreset! vol (f (deref vol)))))
 
 ;;---------------------------------------------------------
 ;; Handling state
@@ -546,7 +564,7 @@
       (scanner/with-user-state! scanner u)
       (reply/ok reply u))))
 
-(defn match-user-state
+(defn some-user-state
   "Succeeds if `pred` returns logical true when called with the current
    user scanner, otherwise it fails.  Returns the return value of `pred`."
   [pred]

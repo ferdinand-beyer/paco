@@ -33,7 +33,7 @@ public final class LineTracker {
     }
 
     public boolean track(int index, int ch) {
-        return track(index, ch, CharScanner.EOS);
+        return track(index, ch, ICharScanner.EOS);
     }
     
     public boolean track(int index, int ch, int nextCh) {
@@ -56,7 +56,7 @@ public final class LineTracker {
         return false;
     }
 
-    public int skip(CharScanner scanner) {
+    public int skip(ICharScanner scanner) {
         final int index = scanner.index();
         final int ch = scanner.peekChar();
         if (ch < 0) {
@@ -67,7 +67,7 @@ public final class LineTracker {
         return n;
     }
 
-    public int skip(CharScanner scanner, int n) {
+    public int skip(ICharScanner scanner, int n) {
         int skipped = 0;
         int ch = scanner.peekChar();
         while (ch >= 0 && skipped < n) {
@@ -80,7 +80,7 @@ public final class LineTracker {
         return skipped;
     }
 
-    public int skipCharsWhile(CharScanner scanner, CharPredicate pred) {
+    public int skipCharsWhile(ICharScanner scanner, ICharPredicate pred) {
         int skipped = 0;
         int ch = scanner.peekChar();
         while (ch >= 0 && pred.test((char) ch)) {
