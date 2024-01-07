@@ -450,37 +450,46 @@
 (defn max [p n]
   (dp/repeat-max `max p rfs/seqex n))
 
-(defn *sep-by [p sep]
-  (dp/sep `*sep-by p sep rfs/vector true false))
+(defn *sep-by
+  ([p psep] (*sep-by p psep nil))
+  ([p psep end?]
+   (dp/sep-by `*sep-by p psep rfs/vector true end?)))
 
-(defn +sep-by [p sep]
-  (dp/sep `+sep-by p sep rfs/vector false false))
+(defn +sep-by
+  ([p psep] (+sep-by p psep nil))
+  ([p psep end?]
+   (dp/sep-by `+sep-by p psep rfs/vector false end?)))
 
-(defn *skip-sep-by [p sep]
-  (dp/sep `*skip-sep-by p sep rfs/ignore true false))
+(defn *skip-sep-by
+  ([p psep] (*skip-sep-by p psep nil))
+  ([p psep end?]
+   (dp/sep-by `*skip-sep-by p psep rfs/ignore true end?)))
 
-(defn +skip-sep-by [p sep]
-  (dp/sep `+skip-sep-by p sep rfs/ignore false false))
+(defn +skip-sep-by
+  ([p psep] (+skip-sep-by p psep nil))
+  ([p psep end?]
+   (dp/sep-by `+skip-sep-by p psep rfs/ignore false end?)))
 
-(defn *sep-end-by [p sep]
-  (dp/sep `*sep-end-by p sep rfs/vector true true))
+;; fparsec: manyTill
+(defn *until
+  ([p pend] (*until p pend nil))
+  ([p pend return-end?]
+   (dp/until `*until p pend rfs/vector true return-end?)))
 
-(defn +sep-end-by [p sep]
-  (dp/sep `+sep-end-by p sep rfs/vector false true))
+(defn +until
+  ([p pend] (+until p pend nil))
+  ([p pend return-end?]
+   (dp/until `+until p pend rfs/vector false return-end?)))
 
-(defn *skip-sep-end-by [p sep]
-  (dp/sep `*skip-sep-end-by p sep rfs/ignore true true))
+(defn *skip-until
+  ([p pend] (*skip-until p pend nil))
+  ([p pend return-end?]
+   (dp/until `*skip-until p pend rfs/ignore true return-end?)))
 
-(defn +skip-sep-end-by [p sep]
-  (dp/sep `+skip-sep-end-by p sep rfs/ignore false true))
-
-;; fparsec: manyTill + variants
-
-(defn *until [p endp]
-  (dp/until `*until p endp rfs/vector true false))
-
-(defn +until [p endp]
-  (dp/until `+until p endp rfs/vector false false))
+(defn +skip-until
+  ([p pend] (+skip-until p pend nil))
+  ([p pend return-end?]
+   (dp/until `+skip-until p pend rfs/ignore false return-end?)))
 
 ;; fparsec: chainl, chainr, + variants
 

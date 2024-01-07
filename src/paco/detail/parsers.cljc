@@ -217,7 +217,9 @@
 
 ;; Similar to fparsec's Inline.SepBy
 ;; ? Add include-sep? option
-(defn sep [sym p psep rf empty-ok? sep-end-ok?]
+;; ? Support "must end", e.g. 3 sep-end-modes: reject (default), accept, require
+(defn sep-by
+  [sym p psep rf empty-ok? sep-end-ok?]
   (reify parser/IParser
     (apply [_ scanner reply]
       (let [result (rf)
