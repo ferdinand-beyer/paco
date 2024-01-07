@@ -193,13 +193,18 @@
      :cljs (.-length (aget m 0))))
 
 ;;? Add regex-groups?
-(defn regex [re]
-  (let [expected-error (error/expected (str "pattern" re))]
-    (fn [scanner reply]
-      (if-some [m (scanner/re-match scanner re)]
-        (reply/ok reply (scanner/read-str! scanner (re-match-length m)))
-        (reply/fail reply (error/merge expected-error
-                                       (error/unexpected-token-or-end scanner)))))))
+(defn regex
+  "Returns a parser that matches the regular expression pattern `re` at the
+   current scanner position and returns matched string."
+  ([re]
+   (regex re (str "pattern '" #?(:clj re, :cljs (.-source re)) "'")))
+  ([re label]
+   (let [expected-error (error/expected label)]
+     (fn [scanner reply]
+       (if-some [m (scanner/re-match scanner re)]
+         (reply/ok reply (scanner/read-str! scanner (re-match-length m)))
+         (reply/fail reply (error/merge expected-error
+                                        (error/unexpected-token-or-end scanner))))))))
 
 ;; fparsec: identifier
 

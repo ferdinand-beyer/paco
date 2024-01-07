@@ -155,7 +155,14 @@
   (is (= "foob" (p/parse (c/regex #"[b-x]+") "foobar")))
   (is (= "bar" (p/parse (p/then c/any-char c/any-char c/any-char
                                 (c/regex #"\w+"))
-                        "foobar and barfoo"))))
+                        "foobar and barfoo")))
+  (is (= "foo" (p/parse (c/regex #"(f)(o)(o)") "foobar")))
+
+  (let [reply (helper/run (c/regex #"[a-z]+"))]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= #{(error/expected "pattern '[a-z]+'") error/unexpected-end}
+           (:messages reply)))))
 
 (deftest str*-test
   (is (= "" (p/parse (c/*str (c/string "foo")) "bar")))
