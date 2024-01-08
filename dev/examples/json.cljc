@@ -27,7 +27,7 @@
                             (bigint s)))
                  :cljs (js/parseInt s 10))
               ;; Also the fraction and/or exponent matched
-              #?(:clj (Double/valueOf s), :cljs (parse-double s)))]
+              #?(:clj (Double/valueOf s), :cljs (js/parseFloat s)))]
       (scanner/skip! scanner n)
       (reply/ok reply v))
     (reply/fail reply (error/merge (error/unexpected-token-or-end scanner)

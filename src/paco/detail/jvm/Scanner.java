@@ -4,24 +4,24 @@ import java.util.Objects;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
-public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
+public class Scanner implements ILineTrackingScanner, IUserStateScanner {
 
     protected final IScanner scanner;
 
     private Object userState;
     protected long modCount;
 
-    protected PacoScanner(IScanner scanner, Object userState) {
+    protected Scanner(IScanner scanner, Object userState) {
         this.scanner = Objects.requireNonNull(scanner);
         this.userState = userState;
         this.modCount = 0L;
     }
 
-    public static PacoScanner of(IScanner scanner, Object userState) {
-        return new PacoScanner(scanner, userState);
+    public static Scanner of(IScanner scanner, Object userState) {
+        return new Scanner(scanner, userState);
     }
 
-    public static PacoScanner of(String input, Object userState, boolean enableLineTracking) {
+    public static Scanner of(String input, Object userState, boolean enableLineTracking) {
         final StringScanner scanner = new StringScanner(input);
         if (enableLineTracking) {
             return new WithLineTracking(scanner, userState);
@@ -189,8 +189,13 @@ public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
     }
 
     @Override
-    public long position() {
-        return 0L;
+    public final long position() {
+        return position(scanner.index());
+    }
+
+    @Override
+    public long position(int index) {
+        return index;
     }
 
     @Override
@@ -203,7 +208,7 @@ public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
         return modifiedUnlessZero(scanner.skip(n));
     }
 
-    private static final class WithLineTracking extends PacoScanner {
+    private static final class WithLineTracking extends Scanner {
 
         private final LineTracker lineTracker;
 
@@ -213,8 +218,8 @@ public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
         }
 
         @Override
-        public final long position() {
-            return lineTracker.position(charScanner().index());
+        public final long position(int index) {
+            return lineTracker.position(index);
         }
 
         @Override
@@ -228,7 +233,7 @@ public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
         }
 
         @Override
-        public String readString(int n) {
+        public final String readString(int n) {
             final String s = charScanner().peekString(n);
             if (s != null) {
                 modifiedUnlessZero(lineTracker.skip(charScanner(), s.length()));
@@ -237,7 +242,7 @@ public class PacoScanner implements ILineTrackingScanner, IUserStateScanner {
         }
 
         @Override
-        public int readCharWhen(ICharPredicate pred) {
+        public final int readCharWhen(ICharPredicate pred) {
             final ICharScanner scanner = charScanner();
             final int ch = scanner.readCharWhen(pred);
             if (ch >= 0) {

@@ -146,4 +146,11 @@
       (is (= 2 (scanner/index s)))
       (let [pos (scanner/position s)]
         (is (= 1 (pos/line-index pos)))
-        (is (= 0 (pos/column-index pos)))))))
+        (is (= 0 (pos/column-index pos))))))
+
+  (testing "line tracking disabled"
+    (let [s (scanner/of "a\nb\nc\n" {:line-tracking? false})]
+      (scanner/skip! s 6)
+      (let [pos (scanner/position s)]
+        (is (= 0 (pos/line-index pos)))
+        (is (= 6 (pos/column-index pos)))))))

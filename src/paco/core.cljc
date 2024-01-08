@@ -473,23 +473,19 @@
 ;; fparsec: manyTill
 (defn *until
   ([p pend] (*until p pend nil))
-  ([p pend return-end?]
-   (dp/until `*until p pend rfs/vector true return-end?)))
+  ([p pend include-end?]
+   (dp/until `*until p pend rfs/vector true include-end?)))
 
 (defn +until
   ([p pend] (+until p pend nil))
-  ([p pend return-end?]
-   (dp/until `+until p pend rfs/vector false return-end?)))
+  ([p pend include-end?]
+   (dp/until `+until p pend rfs/vector false include-end?)))
 
-(defn *skip-until
-  ([p pend] (*skip-until p pend nil))
-  ([p pend return-end?]
-   (dp/until `*skip-until p pend rfs/ignore true return-end?)))
+(defn *skip-until [p pend]
+  (dp/until `*skip-until p pend rfs/ignore true false))
 
-(defn +skip-until
-  ([p pend] (+skip-until p pend nil))
-  ([p pend return-end?]
-   (dp/until `+skip-until p pend rfs/ignore false return-end?)))
+(defn +skip-until [p pend]
+  (dp/until `+skip-until p pend rfs/ignore false false))
 
 ;; fparsec: chainl, chainr, + variants
 
@@ -514,13 +510,13 @@
      (~'children [~'_] [~expr])))
 
 (defn pforce
-  "Returns a parser that forwards to ``."
+  "Returns a parser that forwards to `(force d)`."
   [d]
-  (fwd (force d)))
+  (fwd (clojure.core/force d)))
 
 ;; alternate name: pdelay, delay, defer
 (defmacro lazy [& body]
-  `(pforce (delay ~@body)))
+  `(pforce (clojure.core/delay ~@body)))
 
 ;; fparsec: createParserForwardedToRef
 (defn deref
@@ -558,6 +554,15 @@
   [scanner reply]
   (reply/ok reply (scanner/user-state scanner)))
 
+(defn some-user-state
+  "Succeeds if `pred` returns logical true when called with the current
+   user scanner, otherwise it fails.  Returns the return value of `pred`."
+  [pred]
+  (fn [scanner reply]
+    (if-let [ret (pred (scanner/user-state scanner))]
+      (reply/ok reply ret)
+      (reply/fail reply error/no-message))))
+
 (defn set-user-state
   "Sets the user scanner to `u`."
   [u]
@@ -572,68 +577,3 @@
     (let [u (apply f (scanner/user-state scanner) args)]
       (scanner/with-user-state! scanner u)
       (reply/ok reply u))))
-
-(defn some-user-state
-  "Succeeds if `pred` returns logical true when called with the current
-   user scanner, otherwise it fails.  Returns the return value of `pred`."
-  [pred]
-  (fn [scanner reply]
-    (if-let [ret (pred (scanner/user-state scanner))]
-      (reply/ok reply ret)
-      (reply/fail reply error/no-message))))
-
-;;---------------------------------------------------------
-;; Nesting parsers
-
-;; TODO: Move this to a separate namespace?
-
-;; Multiple use cases:
-;; - Generate a scanner that repeatedly applies a parser to obtain
-;;   tokens (lexer).  Higher-level parsers can then be defined on
-;;   these tokens (instead of characters).
-;; - Parse the string result value of a parser:
-;;   - String interpolation
-;;   - HTML attributes with sub-grammar
-;;   - Markdown inlines
-;;   - Doc comments
-;; - Generate a scanner that concatenates strings returned from an
-;;   underlying parser.  Similar to the examples above, but the
-;;   chunks of strings are not considered tokens (the individual
-;;   characters are), and don't need to be buffered into a single
-;;   string before parsing.
-
-;; TODO: Track `index`
-;; Maybe: cache indexes of newlines seen, so that we can
-;; efficiently translate between index and line/col?
-#_(defrecord Token [value pos])
-
-#_(defn token
-    "Behaves like `p`, but wraps its return value in a `Token` record."
-    [p]
-    (with [pos pos, val p]
-      (return (Token. val pos))))
-
-#_(defn tokenizer
-    "Tokenizes the input stream using the parser `p`, skipping over tokens
-   matching `skip-p` (e.g. whitespace).  Returns a sequence of `Token`
-   records."
-    [p skip-p]
-    (then (? skip-p) (sep-end-by* (token p) skip-p)))
-
-#_(defn embed
-    "Parses the return value of `p` using the `inner-p` parser."
-    [p inner-p]
-    (fn [state reply]
-      (detail/call p state
-                   (fn [status1 state1 value1 error1]
-                     (if (detail/ok? status1)
-                     ;; TODO: How to share position information between states?
-                     ;; TODO: Share user state?
-                       (detail/call inner-p (state/of value1 nil)
-                                    (fn [status2 state2 value2 error2]
-                                    ;; TODO: How do we combine errors?
-                                    ;; Probably compare state indexes
-                                      (if (detail/ok? status2)
-                                        (reply :ok state1 value2 nil)
-                                        (reply status2 state2 nil error2))))
-                       (reply status1 state1 value1 error1))))))

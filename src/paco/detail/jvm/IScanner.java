@@ -1,6 +1,7 @@
 package paco.detail.jvm;
 
 public interface IScanner {
+
     int index();
 
     boolean isEnd();

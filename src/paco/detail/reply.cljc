@@ -13,7 +13,7 @@
   (with-value [this value])
   (with-error [this error]))
 
-(deftype MutableReply #?(:clj  [^:unsynchronized-mutable ok?*
+(deftype MutableReply #?(:clj  [^:unsynchronized-mutable ^boolean ok?*
                                 ^:unsynchronized-mutable value*
                                 ^:unsynchronized-mutable error*]
                          :cljs [^:mutable ok?*
@@ -25,7 +25,7 @@
   (error [_] error*)
 
   (with-ok [this ok?]
-    (set! ok?* ok?)
+    (set! ok?* (boolean ok?))
     this)
   (with-value [this value]
     (set! value* value)
@@ -36,17 +36,17 @@
 
   IReplyFactory
   (ok [this value]
-    (set! ok?* true)
+    (set! ok?* (boolean true))
     (set! value* value)
     (set! error* nil)
     this)
   (ok [this value error]
-    (set! ok?* true)
+    (set! ok?* (boolean true))
     (set! value* value)
     (set! error* error)
     this)
   (fail [this error]
-    (set! ok?* false)
+    (set! ok?* (boolean false))
     (set! value* nil)
     (set! error* error)
     this))

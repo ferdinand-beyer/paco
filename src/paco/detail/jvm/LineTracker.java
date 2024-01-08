@@ -94,14 +94,14 @@ public final class LineTracker {
     }
 
     private static long lineColumn(int line, int column) {
-        return (((long) line) << 32) | column;
+        return (((long) line) << 32) | (long) column;
     }
 
     private long searchPosition(int index) {
-        // -(insertion point) - 1
         final int i = Arrays.binarySearch(lineStarts, 0, allocated, index);
         if (i < -1) {
             // after a known line start
+            // i := -(insertion point) - 1
             final int line = -i - 1;
             return lineColumn(line, index - lineStarts[line - 1]);
         }
@@ -109,7 +109,7 @@ public final class LineTracker {
             // on a line start
             return lineColumn(i + 1, 0);
         }
-        // -1 => before first line start
+        // -1 => before first line start (insertion point: 0)
         return lineColumn(0, index);
     }
 

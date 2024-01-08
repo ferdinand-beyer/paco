@@ -115,7 +115,7 @@
   (with-user-state! [scanner user-state]))
 
 (defprotocol ILineTrackingScanner
-  (position [scanner])
+  (position [scanner] [scanner index])
   (untracked-skip! [scanner] [scanner n]))
 
 (defprotocol ILineTracker
@@ -210,8 +210,13 @@
 
   ILineTrackingScanner
   (position [_]
-    (when line-tracker
-      (-position line-tracker (index scanner))))
+    (if line-tracker
+      (-position line-tracker (index scanner))
+      (pos/position 0 (index scanner))))
+  (position [_ index]
+    (if line-tracker
+      (-position line-tracker index)
+      (pos/position 0 index)))
   (untracked-skip! [_]
     (let [k (skip! scanner)]
       (when-not (zero? k)
