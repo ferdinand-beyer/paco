@@ -1,13 +1,25 @@
 {:deps {com.fbeyer/paco {:local/root "."}}
  :pods {clj-kondo/clj-kondo {:version "2023.12.15"}}
- :tasks {javac (clojure "-T:build" "javac")
+ :tasks {compile {:depends [javac]}
+         javac (clojure "-T:build" "javac")
+
+         check (run '-check:all #_{:parallel true})
+         -check:all {:depends [check:clj-kondo check:eastwood]}
+
+         check:clj-kondo {:requires ([pod.borkdude.clj-kondo :as clj-kondo])
+                          :task (do
+                                  (println "== clj-kondo ==")
+                                  (clj-kondo/print! (clj-kondo/run! {:lint ["src"]})))}
+
+         check:eastwood (clojure "-M:eastwood")
 
          test (run '-test:all #_{:parallel true})
          -test:all {:depends [test:clj test:cljs test:bb]}
 
-         test:clj (do
+         test:clj (let [args (cond-> ["-M:test:kaocha" "unit"]
+                               (some #{"--coverage"} *command-line-args*) (conj "--plugin" "cloverage"))]
                     (println "Running Clojure tests...")
-                    (clojure "-M:test:kaocha" "unit"))
+                    (apply clojure args))
 
          -prepare-kaocha-cljs {:requires ([babashka.fs :as fs])
                                :task (when-not (fs/directory? "node_modules/ws")
@@ -26,6 +38,10 @@
                           (println "Running Babashka tests...")
                           (kaocha.runner/-main "unit"))}
 
+         jar (clojure "-T:build" "jar")
+
+         clean (clojure "-T:build" "clean")
+
          clj-kondo:init {:requires ([babashka.fs :as fs]
                                     [pod.borkdude.clj-kondo :as clj-kondo])
                          :task (let [opts {:cache true
@@ -36,14 +52,4 @@
                                                       fs/split-paths
                                                       (into [] (map str)))
                                            :parallel true}]
-                                 (clj-kondo/print! (clj-kondo/run! opts)))}
-
-         check (run '-check:all #_{:parallel true})
-         -check:all {:depends [check:clj-kondo check:eastwood]}
-
-         check:clj-kondo {:requires ([pod.borkdude.clj-kondo :as clj-kondo])
-                          :task (do
-                                  (println "== clj-kondo ==")
-                                  (clj-kondo/print! (clj-kondo/run! {:lint ["src"]})))}
-
-         check:eastwood (clojure "-M:eastwood")}}
+                                 (clj-kondo/print! (clj-kondo/run! opts)))}}}

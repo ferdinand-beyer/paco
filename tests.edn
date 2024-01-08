@@ -1,5 +1,13 @@
 #kaocha/v1
-{:tests [{:id :unit}
-         {:id :unit-cljs
-          :type :kaocha.type/cljs
-          :cljs/compiler-options {:output-dir "target/cljs"}}]}
+ {:tests [{:id :unit}
+          {:id :unit-cljs
+           :type :kaocha.type/cljs
+           :cljs/compiler-options {:output-dir "target/cljs"}}]
+
+  :plugins #profile {:default []
+                     :ci      [:kaocha.plugin/cloverage]}
+
+  :cloverage/opts {:html? #profile {:default true, :ci false}}
+
+  :reporter #profile {:default [kaocha.report.progress/report]
+                      :ci      [kaocha.report/documentation]}}
