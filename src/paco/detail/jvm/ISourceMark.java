@@ -1,6 +1,8 @@
 package paco.detail.jvm;
 
-public interface ISourceMark extends AutoCloseable {
+import java.io.Closeable;
+
+public interface ISourceMark extends Closeable {
 
     int index();
 

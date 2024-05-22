@@ -18,7 +18,7 @@
   (b/javac {:basis @basis
             :src-dirs ["src"]
             :class-dir java-class-dir
-            :javac-opts ["-Xlint:-options" "--release" "8"]}))
+            :javac-opts ["-Xlint:all" "-Xlint:-options" "--release" "8"]}))
 
 (defn compile [_]
   (b/compile-clj {:basis @basis

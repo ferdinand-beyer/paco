@@ -32,9 +32,8 @@ public interface ICharPredicate {
     static ICharPredicate of(IFn f) {
         // 1-arg fn hinted with ^long
         if (f instanceof IFn.LO) {
-            final IFn.LO flo = (IFn.LO) f;
             return ch -> {
-                final Object ret = flo.invokePrim((long) ch);
+                final Object ret = ((IFn.LO) f).invokePrim((long) ch);
                 return ret != null && ret != Boolean.FALSE;
             };
         }

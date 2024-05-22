@@ -1,5 +1,6 @@
 package paco.detail.jvm;
 
+import java.io.IOException;
 import java.util.Objects;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
@@ -86,7 +87,7 @@ public class Source implements ILineTrackingSource, IUserStateSource {
         }
 
         @Override
-        public void close() throws Exception {
+        public void close() throws IOException {
             sourceMark.close();
         }
     }
