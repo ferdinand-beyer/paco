@@ -6,14 +6,14 @@
             [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
-            [paco.detail.scanner :as scanner])
+            [paco.detail.source :as source])
   #?(:clj (:import [clojure.lang MapEntry])))
 
 (def skip-whitespace
   (c/*skip-satisfy (preds/among " \r\n\t")))
 
-(defn number [scanner reply]
-  (if-let [m (scanner/re-match scanner #"-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
+(defn number [source reply]
+  (if-let [m (source/re-match source #"-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
     (let [m #?(:bb m, :clj ^java.util.regex.MatchResult m, :cljs m)
           s #?(:clj (.group m), :cljs (aget m 0))
           n #?(:clj (.length s), :cljs (.-length s))
@@ -28,9 +28,9 @@
                  :cljs (js/parseInt s 10))
               ;; Also the fraction and/or exponent matched
               #?(:clj (Double/valueOf s), :cljs (js/parseFloat s)))]
-      (scanner/skip! scanner n)
+      (source/skip! source n)
       (reply/ok reply v))
-    (reply/fail reply (error/merge (error/unexpected-token-or-end scanner)
+    (reply/fail reply (error/merge (error/unexpected-token-or-end source)
                                    (error/expected "number")))))
 
 (defn- parse-int [s radix]
@@ -61,25 +61,25 @@
   (let [quote    (preds/eq \")
         regular  (preds/not-among "\"\\")
         expected (error/expected-input \")
-        pstring  (fn [scanner reply]
+        pstring  (fn [source reply]
                    ;; skip over start quote
-                   (scanner/skip! scanner)
-                   (let [start (scanner/index scanner)]
+                   (source/skip! source)
+                   (source/with-release [mark (source/mark source)]
                      (loop []
-                       (if (scanner/read-char-when! scanner regular)
+                       (if (source/read-char-when! source regular)
                          (recur)
                          ;; found closing quote, escape sequence, or end
-                         (if-let [ch (scanner/peek scanner)]
-                           (let [s (scanner/read-from scanner start)]
-                             (scanner/skip! scanner)
+                         (if-let [ch (source/peek source)]
+                           (let [s (source/read-from source mark)]
+                             (source/skip! source)
                              (if (= \" ch)
                                (reply/ok reply s)
                                (let [p (slow-string-remainder s)]
-                                 (parser/apply p scanner reply))))
+                                 (parser/apply p source reply))))
                            (reply/fail reply (error/merge error/unexpected-end expected)))))))]
-    (fn [scanner reply]
-      (if (scanner/satisfies-char-pred? scanner quote)
-        (pstring scanner reply)
+    (fn [source reply]
+      (if (source/satisfies-char-pred? source quote)
+        (pstring source reply)
         (reply/fail reply expected)))))
 
 (defn comma-sep [p]

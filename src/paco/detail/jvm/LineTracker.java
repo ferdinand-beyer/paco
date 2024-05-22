@@ -33,7 +33,7 @@ public final class LineTracker {
     }
 
     public boolean track(int index, int ch) {
-        return track(index, ch, ICharScanner.EOS);
+        return track(index, ch, ICharSource.EOS);
     }
     
     public boolean track(int index, int ch, int nextCh) {
@@ -56,45 +56,45 @@ public final class LineTracker {
         return false;
     }
 
-    public int skip(ICharScanner scanner) {
-        final int index = scanner.index();
-        final int ch = scanner.peekChar();
+    public int skip(ICharSource source) {
+        final int index = source.index();
+        final int ch = source.peekChar();
         if (ch < 0) {
             return 0;
         }
-        final int n = scanner.skip();
-        track(index, ch, scanner.peekChar());
+        final int n = source.skip();
+        track(index, ch, source.peekChar());
         return n;
     }
 
-    public int skip(ICharScanner scanner, int n) {
+    public int skip(ICharSource source, int n) {
         int skipped = 0;
-        int ch = scanner.peekChar();
+        int ch = source.peekChar();
         while (ch >= 0 && skipped < n) {
-            int index = scanner.index();
-            skipped += scanner.skip();
-            int nextCh = scanner.peekChar();
+            int index = source.index();
+            skipped += source.skip();
+            int nextCh = source.peekChar();
             track(index, ch, nextCh);
             ch = nextCh;
         }
         return skipped;
     }
 
-    public int skipCharsWhile(ICharScanner scanner, ICharPredicate pred) {
+    public int skipCharsWhile(ICharSource source, ICharPredicate pred) {
         int skipped = 0;
-        int ch = scanner.peekChar();
+        int ch = source.peekChar();
         while (ch >= 0 && pred.test((char) ch)) {
-            int index = scanner.index();
-            skipped += scanner.skip();
-            int nextCh = scanner.peekChar();
+            int index = source.index();
+            skipped += source.skip();
+            int nextCh = source.peekChar();
             track(index, ch, nextCh);
             ch = nextCh;
         }
         return skipped;
     }
 
-    private static long lineColumn(int line, int column) {
-        return (((long) line) << 32) | (long) column;
+    private static long lineColumn(long line, long column) {
+        return (line << 32) | column;
     }
 
     private long searchPosition(int index) {

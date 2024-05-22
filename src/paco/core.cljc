@@ -5,33 +5,33 @@
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
-            [paco.detail.scanner :as scanner])
+            [paco.detail.source :as source])
   #?(:cljs (:require-macros [paco.core :refer [fwd]])))
 
-(defn- result-data [scanner reply]
+(defn- result-data [source reply]
   {:ok?        (reply/ok? reply)
    :value      (reply/value reply)
    :error      (reply/error reply)
-   :index      (scanner/index scanner)
-   :position   (scanner/position scanner)
-   :user-state (scanner/user-state scanner)})
+   :index      (source/index source)
+   :position   (source/position source)
+   :user-state (source/user-state source)})
 
 (defn run [p input & {:as opts}]
-  (let [scanner (scanner/of input opts)
-        reply   (parser/apply p scanner (reply/mutable-reply))]
-    (result-data scanner reply)))
+  (let [source (source/of input opts)
+        reply   (parser/apply p source (reply/mutable-reply))]
+    (result-data source reply)))
 
-(defn- parse-exception [scanner reply]
-  (let [{:keys [error position] :as data} (result-data scanner reply)]
+(defn- parse-exception [source reply]
+  (let [{:keys [error position] :as data} (result-data source reply)]
     (ex-info (error/string error position)
              (assoc data :type ::parse-error))))
 
 (defn parse [p input & {:as opts}]
-  (let [scanner (scanner/of input opts)
-        reply   (parser/apply p scanner (reply/mutable-reply))]
+  (let [source (source/of input opts)
+        reply   (parser/apply p source (reply/mutable-reply))]
     (if (reply/ok? reply)
       (reply/value reply)
-      (throw (parse-exception scanner reply)))))
+      (throw (parse-exception source reply)))))
 
 ;;---------------------------------------------------------
 ;; Basic parsers
@@ -39,12 +39,12 @@
 ;; fparsec: preturn, >>%
 (defn return
   ([x]
-   (fn [_scanner reply]
+   (fn [_source reply]
      (reply/ok reply x)))
   ([p x]
    (reify parser/IParser
-     (apply [_ scanner reply]
-       (reply/with-value (parser/apply p scanner reply) x))
+     (apply [_ source reply]
+       (reply/with-value (parser/apply p source reply) x))
      (children [_] [p]))))
 
 ;; fparsec: pzero, but fails
@@ -54,31 +54,31 @@
 
 (defn end
   "This parser succeeds a the end of the input stream."
-  [scanner reply]
-  (if (scanner/end? scanner)
+  [source reply]
+  (if (source/end? source)
     (reply/ok reply nil)
     (reply/fail reply error/expected-end)))
 
-(defn any-token [scanner reply]
-  (if-some [token (scanner/peek scanner)]
+(defn any-token [source reply]
+  (if-some [token (source/peek source)]
     (do
-      (scanner/skip! scanner)
+      (source/skip! source)
       (reply/ok reply token))
-    (reply/fail reply (error/unexpected-token-or-end scanner))))
+    (reply/fail reply (error/unexpected-token-or-end source))))
 
-(defn skip-any-token [scanner reply]
-  (if (pos? (scanner/skip! scanner))
+(defn skip-any-token [source reply]
+  (if (pos? (source/skip! source))
     (reply/ok reply nil)
-    (reply/fail reply (error/unexpected-token-or-end scanner))))
+    (reply/fail reply (error/unexpected-token-or-end source))))
 
 (defn token-return [token value]
   (let [expected (error/expected-input token)]
-    (fn [scanner reply]
-      (if (= token (scanner/peek scanner))
+    (fn [source reply]
+      (if (= token (source/peek source))
         (do
-          (scanner/skip! scanner)
+          (source/skip! source)
           (reply/ok reply value))
-        (reply/fail reply (error/merge expected (error/unexpected-token-or-end scanner)))))))
+        (reply/fail reply (error/merge expected (error/unexpected-token-or-end source)))))))
 
 (defn token [token]
   (token-return token token))
@@ -88,17 +88,17 @@
 
 (defn bind [p f]
   (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [reply (parser/apply p scanner reply)]
+    (apply [_ source reply]
+      (let [reply (parser/apply p source reply)]
         (if (reply/ok? reply)
           (let [p2 (f (reply/value reply))]
             (if-some [error (reply/error reply)]
-              (let [modcount (scanner/modcount scanner)
-                    reply    (parser/apply p2 scanner reply)]
-                (if (= modcount (scanner/modcount scanner))
+              (let [modcount (source/modcount source)
+                    reply    (parser/apply p2 source reply)]
+                (if (= modcount (source/modcount source))
                   (reply/with-error reply (error/merge error (reply/error reply)))
                   reply))
-              (parser/apply p2 scanner reply)))
+              (parser/apply p2 source reply)))
           reply)))
     (children [_] [p])))
 
@@ -186,7 +186,7 @@
 
 (defn fail [message]
   (let [error (error/message message)]
-    (fn [_scanner reply]
+    (fn [_source reply]
       (reply/fail reply error))))
 
 ;; fparsec: <?>
@@ -196,10 +196,10 @@
   [p label]
   (let [expected-error (error/expected label)]
     (reify parser/IParser
-      (apply [_ scanner reply]
-        (let [modcount (scanner/modcount scanner)
-              reply    (parser/apply p scanner reply)]
-          (if (= modcount (scanner/modcount scanner))
+      (apply [_ source reply]
+        (let [modcount (source/modcount source)
+              reply    (parser/apply p source reply)]
+          (if (= modcount (source/modcount source))
             (reply/with-error reply expected-error)
             reply)))
       (children [_] [p]))))
@@ -209,23 +209,23 @@
   [p label]
   (let [expected-error (error/expected label)]
     (reify parser/IParser
-      (apply [_ scanner reply]
-        (let [state (scanner/state scanner)
-              reply (parser/apply p scanner reply)]
-          (if (reply/ok? reply)
-            (if (scanner/in-state? scanner state)
-              (reply/with-error reply expected-error)
-              reply)
-            (let [error (reply/error reply)]
-              (if (scanner/in-state? scanner state)
-                (reply/with-error reply (if (error/message? error ::error/nested)
-                                          (error/nested->compound error label)
-                                          expected-error))
-                (do
-                  ;; Backtrack, but keep mark the scanner as modified, so that
-                  ;; normal parsing does not continue.
-                  (scanner/backtrack-modified! scanner state)
-                  (reply/with-error reply (error/compound label scanner error))))))))
+      (apply [_ source reply]
+        (source/with-release [mark (source/mark source)]
+          (let [reply (parser/apply p source reply)]
+            (if (reply/ok? reply)
+              (if (source/at? source mark)
+                (reply/with-error reply expected-error)
+                reply)
+              (let [error (reply/error reply)]
+                (if (source/at? source mark)
+                  (reply/with-error reply (if (error/message? error ::error/nested)
+                                            (error/nested->compound error label)
+                                            expected-error))
+                  (do
+                    ;; Backtrack, but keep mark the source as modified, so that
+                    ;; normal parsing does not continue.
+                    (source/backtrack-modified! source mark)
+                    (reply/with-error reply (error/compound label source error)))))))))
       (children [_] [p]))))
 
 ;; TODO: Other fparsec-style backtracking operators
@@ -240,14 +240,14 @@
    state."
   [p]
   (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [state (scanner/state scanner)
-            reply (parser/apply p scanner reply)]
-        (if (or (reply/ok? reply) (scanner/in-state? scanner state))
-          reply
-          (let [error (error/nested scanner (reply/error reply))]
-            (scanner/backtrack! scanner state)
-            (reply/fail reply error)))))
+    (apply [_ source reply]
+      (source/with-release [mark (source/mark source)]
+        (let [reply (parser/apply p source reply)]
+          (if (or (reply/ok? reply) (source/at? source mark))
+            reply
+            (let [error (error/nested source (reply/error reply))]
+              (source/backtrack! source mark)
+              (reply/fail reply error))))))
     (children [_] [p])))
 
 (defn ?atomic
@@ -258,21 +258,21 @@
   ([p] (?atomic p nil))
   ([p not-found]
    (reify parser/IParser
-     (apply [_ scanner reply]
-       (let [state (scanner/state scanner)
-             reply (parser/apply p scanner reply)]
-         (if (reply/ok? reply)
-           reply
-           (if (scanner/in-state? scanner state)
-             (reply/ok reply not-found (reply/error reply))
-             (let [error (error/nested scanner (reply/error reply))]
-               (scanner/backtrack! scanner state)
-               (reply/ok reply not-found error))))))
+     (apply [_ source reply]
+       (source/with-release [mark (source/mark source)]
+         (let [reply (parser/apply p source reply)]
+           (if (reply/ok? reply)
+             reply
+             (if (source/at? source mark)
+               (reply/ok reply not-found (reply/error reply))
+               (let [error (error/nested source (reply/error reply))]
+                 (source/backtrack! source mark)
+                 (reply/ok reply not-found error)))))))
      (children [_] [p]))))
 
 ;; TODO
 ;; Maybe two variants: All errors and only when changed state (`catch` and `catch!`)
-;; on-error: (f scanner reply original-state) => detail
+;; on-error: (f source reply original-state) => detail
 ;; variant: on-error-apply: backtrack and fall back to another one?
 ;; alternate names: except
 #_(defn catch
@@ -289,15 +289,15 @@
    (alt2 p1 p2 true))
   ([p1 p2 merge-errors?]
    (reify parser/IParser
-     (apply [_ scanner reply]
-       (let [modcount (scanner/modcount scanner)
-             reply    (parser/apply p1 scanner reply)]
+     (apply [_ source reply]
+       (let [modcount (source/modcount source)
+             reply    (parser/apply p1 source reply)]
          (if (or (reply/ok? reply)
-                 (not= modcount (scanner/modcount scanner)))
+                 (not= modcount (source/modcount source)))
            reply
            (let [error (reply/error reply)
-                 reply (parser/apply p2 scanner reply)]
-             (if (and merge-errors? (= modcount (scanner/modcount scanner)))
+                 reply (parser/apply p2 source reply)]
+             (if (and merge-errors? (= modcount (source/modcount source)))
                (reply/with-error reply (error/merge error (reply/error reply)))
                reply)))))
      (children [_] [p1 p2]))))
@@ -333,71 +333,75 @@
   "Like `p`, but fails when `p` does not change the parser state."
   [p]
   (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [modcount (scanner/modcount scanner)
-            reply    (parser/apply p scanner reply)]
-        (if (= modcount (scanner/modcount scanner))
+    (apply [_ source reply]
+      (let [modcount (source/modcount source)
+            reply    (parser/apply p source reply)]
+        (if (= modcount (source/modcount source))
           (reply/with-ok reply false)
           reply)))
     (children [_] [p])))
 
 ;; fparsec: followedBy, followedByL
-;; alternative names: follows, assert-next
+;; alternative names: follows, assert-next, peek
 (defn followed-by
   ([p]
    (followed-by p nil))
   ([p label]
    (let [expected-error (some-> label error/expected)]
      (reify parser/IParser
-       (apply [_ scanner reply]
-         (let [state (scanner/state scanner)
-               reply (parser/apply p scanner reply)]
-           ;; TODO: Benchmark if we need the conditional
-           (when-not (scanner/in-state? scanner state)
-             (scanner/backtrack! scanner state))
-           (if (reply/ok? reply)
-             (reply/ok reply nil)
-             (reply/fail reply expected-error))))
+       (apply [_ source reply]
+         (source/with-release [mark (source/mark source)]
+           (let [reply (parser/apply p source reply)]
+             ;; TODO: Benchmark if we need the conditional
+             (when-not (source/at? source mark)
+               (source/backtrack! source mark))
+             (if (reply/ok? reply)
+               (reply/ok reply nil)
+               (reply/fail reply expected-error)))))
        (children [_] [p])))))
 
 ;; fparsec: notFollowedBy, notFollowedByL
-;; alternative names: assert-not-next
+;; alternative names: assert-not-next, not, ?! (regex negative lookahead)
 (defn not-followed-by
+  "Returns a parser that succeeds if the parser `p` fails, and fails otherwise.
+   In both cases, it does not change the parser state."
   ([p]
    (not-followed-by p nil))
   ([p label]
    (let [expected-error (some-> label error/unexpected)]
      (reify parser/IParser
-       (apply [_ scanner reply]
-         (let [state (scanner/state scanner)
-               reply (parser/apply p scanner reply)]
-           ;; TODO: Benchmark if we need the conditional
-           (when-not (scanner/in-state? scanner state)
-             (scanner/backtrack! scanner state))
-           (if (reply/ok? reply)
-             (reply/fail reply expected-error)
-             (reply/ok reply nil))))
+       (apply [_ source reply]
+         (source/with-release [mark (source/mark source)]
+           (let [reply (parser/apply p source reply)]
+             ;; TODO: Benchmark if we need the conditional
+             (when-not (source/at? source mark)
+               (source/backtrack! source mark))
+             (if (reply/ok? reply)
+               (reply/fail reply expected-error)
+               (reply/ok reply nil)))))
        (children [_] [p])))))
 
 ;; fparsec: lookAhead
-;; alternate names: peek; ?=, ?!, ?<=, ?<!
+;; alternate names: peek; ?= (regex positive look-ahead)
+;; TODO: The difference to `followed-by` is subtle. Do we need both?
 (defn look-ahead
   [p]
   (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [state (scanner/state scanner)
-            reply (parser/apply p scanner reply)]
-        (if (reply/ok? reply)
-          (do
-            ;; TODO: Benchmark if we need the conditional
-            (when-not (scanner/in-state? scanner state)
-              (scanner/backtrack! scanner state))
-            (reply/with-error reply nil))
-          (if (scanner/in-state? scanner state)
-            reply
-            (let [error (error/nested scanner (reply/error reply))]
-              (scanner/backtrack! scanner state)
-              (reply/fail reply error))))))
+    (apply [_ source reply]
+      (source/with-release [mark (source/mark source)]
+        (let [reply (parser/apply p source reply)]
+          (if (reply/ok? reply)
+            (do
+              ;; TODO: Benchmark if we need the conditional
+              (when-not (source/at? source mark)
+                (source/backtrack! source mark))
+              ;; Discard error messages
+              (reply/with-error reply nil))
+            (if (source/at? source mark)
+              reply
+              (let [error (error/nested source (reply/error reply))]
+                (source/backtrack! source mark)
+                (reply/fail reply error)))))))
     (children [_] [p])))
 
 ;;---------------------------------------------------------
@@ -505,8 +509,8 @@
    infinite loops / stack overflows."
   [expr]
   `(reify parser/IParser
-     (~'apply [~'_ scanner# reply#]
-       (parser/apply ~expr scanner# reply#))
+     (~'apply [~'_ source# reply#]
+       (parser/apply ~expr source# reply#))
      (~'children [~'_] [~expr])))
 
 (defn pforce
@@ -540,40 +544,40 @@
 
 (defn index
   "Returns the index of the next token in the input stream."
-  [scanner reply]
-  (reply/ok reply (scanner/index scanner)))
+  [source reply]
+  (reply/ok reply (source/index source)))
 
 ;; TODO: This assumes an underlying char stream?
 (defn pos
   "Returns the current position in the input stream."
-  [scanner reply]
-  (reply/ok reply (scanner/position scanner)))
+  [source reply]
+  (reply/ok reply (source/position source)))
 
 (defn user-state
   "Returns the current user state."
-  [scanner reply]
-  (reply/ok reply (scanner/user-state scanner)))
+  [source reply]
+  (reply/ok reply (source/user-state source)))
 
 (defn some-user-state
   "Succeeds if `pred` returns logical true when called with the current
-   user scanner, otherwise it fails.  Returns the return value of `pred`."
+   user source, otherwise it fails.  Returns the return value of `pred`."
   [pred]
-  (fn [scanner reply]
-    (if-let [ret (pred (scanner/user-state scanner))]
+  (fn [source reply]
+    (if-let [ret (pred (source/user-state source))]
       (reply/ok reply ret)
       (reply/fail reply error/no-message))))
 
 (defn set-user-state
-  "Sets the user scanner to `u`."
+  "Sets the user source to `u`."
   [u]
-  (fn [scanner reply]
-    (scanner/with-user-state! scanner u)
+  (fn [source reply]
+    (source/with-user-state! source u)
     (reply/ok reply u)))
 
 (defn swap-user-state
-  "Sets ths user scanner to `(apply f user-state args)`."
+  "Sets ths user source to `(apply f user-state args)`."
   [f & args]
-  (fn [scanner reply]
-    (let [u (apply f (scanner/user-state scanner) args)]
-      (scanner/with-user-state! scanner u)
+  (fn [source reply]
+    (let [u (apply f (source/user-state source) args)]
+      (source/with-user-state! source u)
       (reply/ok reply u))))

@@ -7,24 +7,24 @@
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
-            [paco.detail.scanner :as scanner]))
+            [paco.detail.source :as source]))
 
 ;;---------------------------------------------------------
 ;; Character parsers
 
 (defn newline-return [value]
   (let [expected-error (error/expected "newline")]
-    (fn [scanner reply]
-      (if-let [ch (scanner/peek scanner)]
+    (fn [source reply]
+      (if-let [ch (source/peek source)]
         (if (= \newline ch)
           (do
-            (scanner/skip! scanner)
+            (source/skip! source)
             (reply/ok reply value))
           (if (= \return ch)
             (do
-              (scanner/skip! scanner)
-              (when (= \newline (scanner/peek scanner))
-                (scanner/skip! scanner))
+              (source/skip! source)
+              (when (= \newline (source/peek source))
+                (source/skip! source))
               (reply/ok reply value))
             (reply/fail reply (error/merge expected-error (error/unexpected-input ch)))))
         (reply/fail reply error/unexpected-end)))))
@@ -35,14 +35,14 @@
 
 (defn- satisfy-char [pred expected-error]
   (let [pred (preds/pred pred)]
-    (fn [scanner reply]
-      (let [ch (scanner/read-char-when! scanner pred)]
+    (fn [source reply]
+      (let [ch (source/read-char-when! source pred)]
         (if ch
           (reply/ok reply ch)
           (reply/fail reply (error/merge expected-error
                                          (if (nil? ch)
                                            error/unexpected-end
-                                           (error/unexpected-input (scanner/peek scanner))))))))))
+                                           (error/unexpected-input (source/peek source))))))))))
 
 ;; fparsec: normalises newlines
 (defn satisfy
@@ -133,12 +133,12 @@
   (let [length (count s)
         expected-error (error/expected-input s)
         unexpected-end (error/merge error/unexpected-end expected-error)]
-    (fn [scanner reply]
-      (if (scanner/matches-str? scanner s)
+    (fn [source reply]
+      (if (source/matches-str? source s)
         (do
-          (scanner/untracked-skip! scanner length)
+          (source/untracked-skip! source length)
           (reply/ok reply s))
-        (reply/fail reply (if (scanner/end? scanner)
+        (reply/fail reply (if (source/end? source)
                             unexpected-end
                             expected-error))))))
 
@@ -150,12 +150,12 @@
   (let [length (count s)
         expected-error (error/expected-input s) ;; ? expected-input-ci?
         unexpected-end (error/merge error/unexpected-end expected-error)]
-    (fn [scanner reply]
-      (if (scanner/matches-str-ci? scanner s)
-        (let [value (scanner/peek-str scanner length)]
-          (scanner/untracked-skip! scanner length)
+    (fn [source reply]
+      (if (source/matches-str-ci? source s)
+        (let [value (source/peek-str source length)]
+          (source/untracked-skip! source length)
           (reply/ok reply value))
-        (reply/fail reply (if (scanner/end? scanner)
+        (reply/fail reply (if (source/end? source)
                             unexpected-end
                             expected-error))))))
 
@@ -173,16 +173,16 @@
    and returns them as a string."
   [pred]
   (let [pred (preds/pred pred)]
-    (fn [scanner reply]
-      (let [start (scanner/index scanner)
-            value (when (pos? (scanner/skip-chars-while! scanner pred))
-                    (scanner/read-from scanner start))]
+    (fn [source reply]
+      (let [start (source/index source)
+            value (when (pos? (source/skip-chars-while! source pred))
+                    (source/read-from source start))]
         (reply/ok reply value)))))
 
 (defn *skip-satisfy [pred]
   (let [pred (preds/pred pred)]
-    (fn [scanner reply]
-      (scanner/skip-chars-while! scanner pred)
+    (fn [source reply]
+      (source/skip-chars-while! source pred)
       (reply/ok reply nil))))
 
 (defn- re-match-length [m]
@@ -195,16 +195,16 @@
 ;;? Add regex-groups?
 (defn regex
   "Returns a parser that matches the regular expression pattern `re` at the
-   current scanner position and returns matched string."
+   current source position and returns matched string."
   ([re]
    (regex re (str "pattern '" #?(:clj re, :cljs (.-source re)) "'")))
   ([re label]
    (let [expected-error (error/expected label)]
-     (fn [scanner reply]
-       (if-some [m (scanner/re-match scanner re)]
-         (reply/ok reply (scanner/read-str! scanner (re-match-length m)))
+     (fn [source reply]
+       (if-some [m (source/re-match source re)]
+         (reply/ok reply (source/read-str! source (re-match-length m)))
          (reply/fail reply (error/merge expected-error
-                                        (error/unexpected-token-or-end scanner))))))))
+                                        (error/unexpected-token-or-end source))))))))
 
 ;; fparsec: identifier
 
@@ -221,11 +221,11 @@
 
 (defn skipped [p]
   (reify parser/IParser
-    (apply [_ scanner reply]
-      (let [start (scanner/index scanner)
-            reply (parser/apply p scanner reply)]
-        (cond-> reply
-          (reply/ok? reply) (reply/with-value (scanner/read-from scanner start)))))
+    (apply [_ source reply]
+      (source/with-release [mark (source/mark source)]
+        (let [reply (parser/apply p source reply)]
+          (cond-> reply
+            (reply/ok? reply) (reply/with-value (source/read-from source mark))))))
     (children [_] [p])))
 
 ;; fparsec: number parsers (int, float)

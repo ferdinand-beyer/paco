@@ -1,6 +1,6 @@
 package paco.detail.jvm;
 
-public interface ILineTrackingScanner extends ICharScanner {
+public interface ILineTrackingSource extends ICharSource {
 
     long position();
 

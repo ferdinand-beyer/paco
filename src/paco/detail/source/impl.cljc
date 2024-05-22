@@ -1,4 +1,4 @@
-(ns paco.detail.scanner.default
+(ns paco.detail.source.impl
   (:refer-clojure :exclude [peek])
   (:require #?@(:cljs [[goog.array :as garr]
                        [goog.string :as gstr]])
@@ -8,33 +8,40 @@
 
 #?(:clj (set! *warn-on-reflection* true))
 
-(defprotocol IScanner
-  (index [scanner])
-  (end? [scanner])
-  (peek [scanner])
-  (skip! [scanner] [scanner n])
-  (state [scanner])
-  (in-state? [scanner state])
-  (backtrack! [scanner state]))
+(defprotocol IReleasable
+  (-release! [this]))
 
-(defprotocol ICharScanner
-  (peek-str [scanner n])
-  (read-str! [scanner n])
-  (satisfies-char-pred? [scanner pred])
-  (matches-str? [scanner s])
-  (matches-str-ci? [scanner s])
-  (re-match [scanner re])
-  (read-char-when! [scanner pred])
-  (skip-chars-while! [scanner pred])
-  (read-from [scanner start]))
+(defn release! [x]
+  (when (satisfies? IReleasable x)
+    (-release! x)))
 
-(deftype StringScanner #?(:clj  [^String input
-                                 ^int end
-                                 ^:unsynchronized-mutable ^int index*]
-                          :cljs [^string input
-                                 ^number end
-                                 ^:mutable ^number index*])
-  IScanner
+(defprotocol ISource
+  (index [source])
+  (end? [source])
+  (peek [source])
+  (skip! [source] [source n])
+  (mark [source])
+  (at? [source mark])
+  (backtrack! [source mark]))
+
+(defprotocol ICharSource
+  (peek-str [source n])
+  (read-str! [source n])
+  (satisfies-char-pred? [source pred])
+  (matches-str? [source s])
+  (matches-str-ci? [source s])
+  (re-match [source re])
+  (read-char-when! [source pred])
+  (skip-chars-while! [source pred])
+  (read-from [source mark]))
+
+(deftype StringSource #?(:clj  [^String input
+                                ^int end
+                                ^:unsynchronized-mutable ^int index*]
+                         :cljs [^string input
+                                ^number end
+                                ^:mutable ^number index*])
+  ISource
   (index [_] index*)
   (end? [_] (>= index* end))
   (peek [_]
@@ -49,13 +56,13 @@
           k     (unchecked-subtract-int index index*)]
       (set! index* index)
       k))
-  (state [_] index*)
-  (in-state? [_ index] (= index index*))
+  (mark [_] index*)
+  (at? [_ index] (= index index*))
   (backtrack! [this index]
     (set! index* (int index))
     this)
 
-  ICharScanner
+  ICharSource
   (peek-str [_ n]
     (when (< index* end)
       (.substring input index* (Math/min (unchecked-add-int index* (int n)) end))))
@@ -103,103 +110,103 @@
         (let [k (unchecked-subtract-int i index*)]
           (set! index* k)
           k))))
-  (read-from [_ start] (subs input start index*)))
+  (read-from [_ mark] (subs input mark index*)))
 
-(defn- string-scanner [^String s]
-  (StringScanner. s #?(:clj (.length s) :cljs (.-length s)) 0))
+(defn- string-source [^String s]
+  (StringSource. s #?(:clj (.length s) :cljs (.-length s)) 0))
 
-(defprotocol IUserStateScanner
-  (modcount [scanner])
-  (backtrack-modified! [scanner state])
-  (user-state [scanner])
-  (with-user-state! [scanner user-state]))
+(defprotocol IUserStateSource
+  (modcount [source])
+  (backtrack-modified! [source mark])
+  (user-state [source])
+  (with-user-state! [source user-state]))
 
-(defprotocol ILineTrackingScanner
-  (position [scanner] [scanner index])
-  (untracked-skip! [scanner] [scanner n]))
+(defprotocol ILineTrackingSource
+  (position [source] [source index])
+  (untracked-skip! [source] [source n]))
 
 (defprotocol ILineTracker
   (-track! [tracker index ch] [tracker index ch next-ch])
-  (-track-skip! [tracker scanner] [tracker scanner n])
-  (-track-skip-while! [tracker scanner pred])
+  (-track-skip! [tracker source] [tracker source n])
+  (-track-skip-while! [tracker source pred])
   (-position [tracker index]))
 
-(deftype ScannerState #?(:clj  [^long modcount ^int index user-state]
-                         :cljs [^number modcount ^number index user-state]))
+(deftype SourceMark #?(:clj  [mark ^long modcount user-state]
+                       :cljs [mark ^number modcount user-state]))
 
-(deftype Scanner #?(:clj  [scanner
-                           line-tracker
-                           ^:unsynchronized-mutable ^long modcount*
-                           ^:unsynchronized-mutable user-state*]
-                    :cljs [scanner
-                           line-tracker
-                           ^:mutable ^number modcount*
-                           ^:mutable user-state*])
-  IScanner
-  (index [_] (index scanner))
-  (end? [_] (end? scanner))
-  (peek [_] (peek scanner))
+(deftype Source #?(:clj  [source
+                          line-tracker
+                          ^:unsynchronized-mutable ^long modcount*
+                          ^:unsynchronized-mutable user-state*]
+                   :cljs [source
+                          line-tracker
+                          ^:mutable ^number modcount*
+                          ^:mutable user-state*])
+  ISource
+  (index [_] (index source))
+  (end? [_] (end? source))
+  (peek [_] (peek source))
   (skip! [_]
     (let [k (if line-tracker
-              (-track-skip! line-tracker scanner)
-              (skip! scanner))]
+              (-track-skip! line-tracker source)
+              (skip! source))]
       (when-not (zero? k)
         (set! modcount* (unchecked-inc modcount*)))
       k))
   (skip! [_ n]
     (let [k (if line-tracker
-              (-track-skip! line-tracker scanner n)
-              (skip! scanner n))]
+              (-track-skip! line-tracker source n)
+              (skip! source n))]
       (when-not (zero? k)
         (set! modcount* (unchecked-inc modcount*)))
       k))
-  (state [_]
-    (ScannerState. modcount* (index scanner) user-state*))
-  (in-state? [_ state]
-    (= modcount* (.-modcount ^ScannerState state)))
-  (backtrack! [this state]
-    (backtrack! scanner (.-index ^ScannerState state))
-    (set! modcount* (.-modcount ^ScannerState state))
-    (set! user-state* (.-user-state ^ScannerState state))
+  (mark [_]
+    (SourceMark. (mark source) modcount* user-state*))
+  (at? [_ mark]
+    (= modcount* (.-modcount ^SourceMark mark)))
+  (backtrack! [this mark]
+    (backtrack! source (.-mark ^SourceMark mark))
+    (set! modcount* (.-modcount ^SourceMark mark))
+    (set! user-state* (.-user-state ^SourceMark mark))
     this)
 
-  ICharScanner
-  (peek-str [_ n] (peek-str scanner n))
+  ICharSource
+  (peek-str [_ n] (peek-str source n))
   (read-str! [_ n]
     (let [s (if line-tracker
-              (when-let [s (peek-str scanner n)]
-                (-track-skip! line-tracker scanner n)
+              (when-let [s (peek-str source n)]
+                (-track-skip! line-tracker source n)
                 s)
-              (read-str! scanner n))]
+              (read-str! source n))]
       (when-not (zero? (count s))
         (set! modcount* (unchecked-inc modcount*)))
       s))
-  (satisfies-char-pred? [_ pred] (satisfies-char-pred? scanner pred))
-  (matches-str? [_ s] (matches-str? scanner s))
-  (matches-str-ci? [_ s] (matches-str-ci? scanner s))
-  (re-match [_ re] (re-match scanner re))
+  (satisfies-char-pred? [_ pred] (satisfies-char-pred? source pred))
+  (matches-str? [_ s] (matches-str? source s))
+  (matches-str-ci? [_ s] (matches-str-ci? source s))
+  (re-match [_ re] (re-match source re))
   (read-char-when! [_ pred]
-    (let [ch (read-char-when! scanner pred)]
+    (let [ch (read-char-when! source pred)]
       (when ch
         (set! modcount* (unchecked-inc modcount*))
         (when line-tracker
-          (-track! line-tracker (unchecked-dec (index scanner)) ch (peek scanner))))
+          (-track! line-tracker (unchecked-dec (index source)) ch (peek source))))
       ch))
   (skip-chars-while! [_ pred]
     (let [k (if line-tracker
-              (-track-skip-while! line-tracker scanner pred)
-              (skip-chars-while! scanner pred))]
+              (-track-skip-while! line-tracker source pred)
+              (skip-chars-while! source pred))]
       (when-not (zero? k)
         (set! modcount* (unchecked-inc modcount*)))
       k))
-  (read-from [_ start] (read-from scanner start))
+  (read-from [_ mark] (read-from source (.-mark ^SourceMark mark)))
 
-  IUserStateScanner
+  IUserStateSource
   (modcount [_] modcount*)
-  (backtrack-modified! [this state]
-    (backtrack! scanner (.-index ^ScannerState state))
+  (backtrack-modified! [this mark]
+    (backtrack! source (.-mark ^SourceMark mark))
     (set! modcount* (unchecked-inc modcount*))
-    (set! user-state* (.-user-state ^ScannerState state))
+    (set! user-state* (.-user-state ^SourceMark mark))
     this)
   (user-state [_] user-state*)
   (with-user-state! [this user-state]
@@ -208,28 +215,28 @@
       (set! user-state* user-state))
     this)
 
-  ILineTrackingScanner
+  ILineTrackingSource
   (position [_]
     (if line-tracker
-      (-position line-tracker (index scanner))
-      (pos/position 0 (index scanner))))
+      (-position line-tracker (index source))
+      (pos/position 0 (index source))))
   (position [_ index]
     (if line-tracker
       (-position line-tracker index)
       (pos/position 0 index)))
   (untracked-skip! [_]
-    (let [k (skip! scanner)]
+    (let [k (skip! source)]
       (when-not (zero? k)
         (set! modcount* (unchecked-inc modcount*)))
       k))
   (untracked-skip! [_ n]
-    (let [k (skip! scanner n)]
+    (let [k (skip! source n)]
       (when-not (zero? k)
         (set! modcount* (unchecked-inc modcount*)))
       k)))
 
-(defn- make-scanner [scanner line-tracker user-state]
-  (Scanner. scanner line-tracker 0 user-state))
+(defn- make-source [source line-tracker user-state]
+  (Source. source line-tracker 0 user-state))
 
 (deftype LineTracker #?(:clj [^ArrayList starts
                               ^:unsynchronized-mutable ^int max-index*]
@@ -248,30 +255,30 @@
           #?(:clj  (.add starts (unchecked-inc-int index))
              :cljs (.push starts (unchecked-inc-int index))))))
     this)
-  (-track-skip! [this scanner]
-    (let [index (index scanner)
-          ch    (peek scanner)
-          k     (skip! scanner)]
-      (-track! this index ch (peek scanner))
+  (-track-skip! [this source]
+    (let [index (index source)
+          ch    (peek source)
+          k     (skip! source)]
+      (-track! this index ch (peek source))
       k))
-  (-track-skip! [this scanner n]
+  (-track-skip! [this source n]
     (let [n (int n)]
       (loop [k (int 0)
-             ch (peek scanner)]
+             ch (peek source)]
         (if (and ch (< k n))
-          (let [index (index scanner)
-                k (unchecked-add-int k (skip! scanner))
-                next-ch (peek scanner)]
+          (let [index (index source)
+                k (unchecked-add-int k (skip! source))
+                next-ch (peek source)]
             (-track! this index ch next-ch)
             (recur k next-ch))
           k))))
-  (-track-skip-while! [this scanner pred]
+  (-track-skip-while! [this source pred]
     (loop [k (int 0)
-           ch (peek scanner)]
+           ch (peek source)]
       (if (and ch (pred ch))
-        (let [index (index scanner)
-              k (unchecked-add-int k (skip! scanner))
-              next-ch (peek scanner)]
+        (let [index (index source)
+              k (unchecked-add-int k (skip! source))
+              next-ch (peek source)]
           (-track! this index ch next-ch)
           (recur k next-ch))
         k)))
@@ -296,7 +303,7 @@
   ([input] (of input nil))
   ([input {:keys [user-state line-tracking?]
            :or {line-tracking? true}}]
-   (make-scanner (string-scanner input)
-                 (when line-tracking?
-                   (line-tracker))
-                 user-state)))
+   (make-source (string-source input)
+                (when line-tracking?
+                  (line-tracker))
+                user-state)))

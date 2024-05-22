@@ -3,22 +3,22 @@
             [paco.detail.error :as error]
             [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
-            [paco.detail.scanner :as scanner]))
+            [paco.detail.source :as source]))
 
 (defn run
   ([p]
    (run p ""))
   ([p input]
-   (let [scanner  (scanner/of input)
-         modcount (scanner/modcount scanner)
-         reply    (parser/apply p scanner (reply/mutable-reply))]
+   (let [source   (source/of input)
+         modcount (source/modcount source)
+         reply    (parser/apply p source (reply/mutable-reply))]
      {:ok?      (reply/ok? reply)
       :fail?    (not (reply/ok? reply))
       :value    (reply/value reply)
       :error    (reply/error reply)
       :messages (error/message-set (reply/error reply))
-      :index    (scanner/index scanner)
-      :position (scanner/position scanner)
-      :changed? (not= modcount (scanner/modcount scanner))})))
+      :index    (source/index source)
+      :position (source/position source)
+      :changed? (not= modcount (source/modcount source))})))
 
 (def any p/any-token)

@@ -4,12 +4,12 @@
 ;;? Add a `name` for inspection?
 ;;? Add `optimize` to optimize the parser graph?
 (defprotocol IParser
-  (apply [this scanner reply])
-  (children [this]))
+  (apply [parser source reply])
+  (children [parser]))
 
 (extend-protocol IParser
   #?(:clj  clojure.lang.Fn
      :cljs function)
-  (apply [f scanner reply]
-    (f scanner reply))
+  (apply [f source reply]
+    (f source reply))
   (children [_] nil))

@@ -4,44 +4,44 @@ import java.util.Objects;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
-public class Scanner implements ILineTrackingScanner, IUserStateScanner {
+public class Source implements ILineTrackingSource, IUserStateSource {
 
-    protected final IScanner scanner;
+    protected final ISource source;
 
     private Object userState;
     protected long modCount;
 
-    protected Scanner(IScanner scanner, Object userState) {
-        this.scanner = Objects.requireNonNull(scanner);
+    protected Source(ISource source, Object userState) {
+        this.source = Objects.requireNonNull(source);
         this.userState = userState;
         this.modCount = 0L;
     }
 
-    public static Scanner of(IScanner scanner, Object userState) {
-        return new Scanner(scanner, userState);
+    public static Source of(ISource source, Object userState) {
+        return new Source(source, userState);
     }
 
-    public static Scanner of(String input, Object userState, boolean enableLineTracking) {
-        final StringScanner scanner = new StringScanner(input);
+    public static Source of(String input, Object userState, boolean enableLineTracking) {
+        final StringSource source = new StringSource(input);
         if (enableLineTracking) {
-            return new WithLineTracking(scanner, userState);
+            return new WithLineTracking(source, userState);
         }
-        return of(scanner, userState);
+        return of(source, userState);
     }
 
     @Override
     public final int index() {
-        return scanner.index();
+        return source.index();
     }
 
     @Override
-    public final boolean isEnd() {
-        return scanner.isEnd();
+    public final boolean atEnd() {
+        return source.atEnd();
     }
 
     @Override
     public final Object peek() {
-        return scanner.peek();
+        return source.peek();
     }
 
     protected final int modifiedUnlessZero(int k) {
@@ -68,59 +68,64 @@ public class Scanner implements ILineTrackingScanner, IUserStateScanner {
         return untrackedSkip(n);
     }
 
-    protected static final class State implements IScannerState {
+    protected static final class Mark implements ISourceMark {
 
-        public final IScannerState scannerState;
+        public final ISourceMark sourceMark;
         public final long modCount;
         public final Object userState;
 
-        public State(IScannerState scannerState, long modCount, Object userState) {
-            this.scannerState = scannerState;
+        public Mark(ISourceMark sourceMark, long modCount, Object userState) {
+            this.sourceMark = sourceMark;
             this.modCount = modCount;
             this.userState = userState;
         }
 
         @Override
         public int index() {
-            return scannerState.index();
+            return sourceMark.index();
+        }
+
+        @Override
+        public void close() throws Exception {
+            sourceMark.close();
         }
     }
 
     @Override
-    public final IScannerState state() {
-        return new State(scanner.state(), modCount, userState);
+    public final ISourceMark mark() {
+        return new Mark(source.mark(), modCount, userState);
     }
 
     @Override
-    public final boolean inState(IScannerState state) {
-        return modCount == ((State) state).modCount;
+    public final boolean atMark(ISourceMark mark) {
+        return modCount == ((Mark) mark).modCount;
     }
 
     @Override
-    public void backtrack(IScannerState state) {
-        final State s = (State) state;
-        scanner.backtrack(s.scannerState);
+    public void backtrack(ISourceMark state) {
+        final Mark s = (Mark) state;
+        source.backtrack(s.sourceMark);
         modCount = s.modCount;
         userState = s.userState;
     }
 
-    protected final ICharScanner charScanner() {
-        return (ICharScanner) scanner;
+    protected final ICharSource charSource() {
+        return (ICharSource) source;
     }
 
     @Override
     public final int peekChar() {
-        return charScanner().peekChar();
+        return charSource().peekChar();
     }
 
     @Override
     public final String peekString(int n) {
-        return charScanner().peekString(n);
+        return charSource().peekString(n);
     }
 
     @Override
     public String readString(int n) {
-        final String s = charScanner().readString(n);
+        final String s = charSource().readString(n);
         if (s != null && !s.isEmpty()) {
             modCount++;
         }
@@ -129,37 +134,37 @@ public class Scanner implements ILineTrackingScanner, IUserStateScanner {
 
     @Override
     public final boolean satisfies(ICharPredicate pred) {
-        return charScanner().satisfies(pred);
+        return charSource().satisfies(pred);
     }
 
     @Override
     public final boolean matchesString(String s) {
-        return charScanner().matchesString(s);
+        return charSource().matchesString(s);
     }
 
     @Override
     public final boolean matchesStringIgnoreCase(String s) {
-        return charScanner().matchesStringIgnoreCase(s);
+        return charSource().matchesStringIgnoreCase(s);
     }
 
     @Override
     public final MatchResult matchRegex(Pattern re) {
-        return charScanner().matchRegex(re);
+        return charSource().matchRegex(re);
     }
 
     @Override
     public int readCharWhen(ICharPredicate pred) {
-        return modifiedUnlessNegative(charScanner().readCharWhen(pred));
+        return modifiedUnlessNegative(charSource().readCharWhen(pred));
     }
 
     @Override
     public int skipCharsWhile(ICharPredicate pred) {
-        return modifiedUnlessZero(charScanner().skipCharsWhile(pred));
+        return modifiedUnlessZero(charSource().skipCharsWhile(pred));
     }
 
     @Override
-    public final String readFrom(int start) {
-        return charScanner().readFrom(start);
+    public final String readFrom(ISourceMark mark) {
+        return charSource().readFrom(((Mark) mark).sourceMark);
     }
 
     @Override
@@ -168,11 +173,10 @@ public class Scanner implements ILineTrackingScanner, IUserStateScanner {
     }
 
     @Override
-    public void backtrackModified(IScannerState state) {
-        final State s = (State) state;
-        scanner.backtrack(s.scannerState);
+    public void backtrackModified(ISourceMark mark) {
+        source.backtrack(((Mark) mark).sourceMark);
         modCount++;
-        userState = s.userState;
+        userState = ((Mark) mark).userState;
     }
 
     @Override
@@ -190,7 +194,7 @@ public class Scanner implements ILineTrackingScanner, IUserStateScanner {
 
     @Override
     public final long position() {
-        return position(scanner.index());
+        return position(source.index());
     }
 
     @Override
@@ -200,20 +204,20 @@ public class Scanner implements ILineTrackingScanner, IUserStateScanner {
 
     @Override
     public final int untrackedSkip() {
-        return modifiedUnlessZero(scanner.skip());
+        return modifiedUnlessZero(source.skip());
     }
 
     @Override
     public final int untrackedSkip(int n) {
-        return modifiedUnlessZero(scanner.skip(n));
+        return modifiedUnlessZero(source.skip(n));
     }
 
-    private static final class WithLineTracking extends Scanner {
+    private static final class WithLineTracking extends Source {
 
         private final LineTracker lineTracker;
 
-        WithLineTracking(IScanner scanner, Object userState) {
-            super(scanner, userState);
+        WithLineTracking(ISource source, Object userState) {
+            super(source, userState);
             this.lineTracker = new LineTracker();
         }
 
@@ -224,37 +228,37 @@ public class Scanner implements ILineTrackingScanner, IUserStateScanner {
 
         @Override
         public final int skip() {
-            return modifiedUnlessZero(lineTracker.skip(charScanner()));
+            return modifiedUnlessZero(lineTracker.skip(charSource()));
         }
 
         @Override
         public final int skip(int n) {
-            return modifiedUnlessZero(lineTracker.skip(charScanner(), n));
+            return modifiedUnlessZero(lineTracker.skip(charSource(), n));
         }
 
         @Override
         public final String readString(int n) {
-            final String s = charScanner().peekString(n);
+            final String s = charSource().peekString(n);
             if (s != null) {
-                modifiedUnlessZero(lineTracker.skip(charScanner(), s.length()));
+                modifiedUnlessZero(lineTracker.skip(charSource(), s.length()));
             }
             return s;
         }
 
         @Override
         public final int readCharWhen(ICharPredicate pred) {
-            final ICharScanner scanner = charScanner();
-            final int ch = scanner.readCharWhen(pred);
+            final ICharSource source = charSource();
+            final int ch = source.readCharWhen(pred);
             if (ch >= 0) {
                 modCount++;
-                lineTracker.track(scanner.index() - 1, ch, scanner.peekChar());
+                lineTracker.track(source.index() - 1, ch, source.peekChar());
             }
             return ch;
         }
 
         @Override
         public final int skipCharsWhile(ICharPredicate pred) {
-            return modifiedUnlessZero(lineTracker.skipCharsWhile(charScanner(), pred));
+            return modifiedUnlessZero(lineTracker.skipCharsWhile(charSource(), pred));
         }
     }
 }

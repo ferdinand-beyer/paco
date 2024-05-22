@@ -1,10 +1,10 @@
 package paco.detail.jvm;
 
-public interface IUserStateScanner extends ICharScanner {
+public interface IUserStateSource extends ICharSource {
     
     long modCount();
     
-    void backtrackModified(IScannerState state);
+    void backtrackModified(ISourceMark mark);
 
     Object getUserState();
 

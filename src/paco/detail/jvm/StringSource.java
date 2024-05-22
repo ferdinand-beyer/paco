@@ -4,14 +4,14 @@ import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public final class StringScanner implements ICharScanner {
+public final class StringSource implements ICharSource {
 
     public final String input;
     private final int end;
 
     private int index;
 
-    public StringScanner(String input) {
+    public StringSource(String input) {
         this.input = input;
         this.end = input.length();
         this.index = 0;
@@ -23,7 +23,7 @@ public final class StringScanner implements ICharScanner {
     }
 
     @Override
-    public boolean isEnd() {
+    public boolean atEnd() {
         return index >= end;
     }
 
@@ -49,11 +49,11 @@ public final class StringScanner implements ICharScanner {
         return count;
     }
 
-    private static final class State implements IScannerState {
+    private static final class Mark implements ISourceMark {
 
         public final int index;
 
-        public State(int index) {
+        public Mark(int index) {
             this.index = index;
         }
 
@@ -61,21 +61,25 @@ public final class StringScanner implements ICharScanner {
         public int index() {
             return index;
         }
+
+        @Override
+        public void close() {
+        }
     }
 
     @Override
-    public State state() {
-        return new State(index);
+    public Mark mark() {
+        return new Mark(index);
     }
 
     @Override
-    public boolean inState(IScannerState state) {
-        return index == ((State) state).index;
+    public boolean atMark(ISourceMark mark) {
+        return index == ((Mark) mark).index;
     }
 
     @Override
-    public void backtrack(IScannerState state) {
-        this.index = ((State) state).index;
+    public void backtrack(ISourceMark state) {
+        this.index = ((Mark) state).index;
     }
 
     @Override
@@ -149,7 +153,7 @@ public final class StringScanner implements ICharScanner {
     }
 
     @Override
-    public String readFrom(int start) {
-        return input.substring(start, index);
+    public String readFrom(ISourceMark mark) {
+        return input.substring(mark.index(), index);
     }
 }

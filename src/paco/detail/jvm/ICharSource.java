@@ -3,7 +3,7 @@ package paco.detail.jvm;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
-public interface ICharScanner extends IScanner {
+public interface ICharSource extends ISource {
 
     int EOS = -1;
     int MISMATCH = -2;
@@ -26,5 +26,5 @@ public interface ICharScanner extends IScanner {
 
     int skipCharsWhile(ICharPredicate pred);
 
-    String readFrom(int start);
+    String readFrom(ISourceMark mark);
 }
