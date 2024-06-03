@@ -215,8 +215,11 @@
 (defn +str [p]
   (dp/repeat-min `+str p rfs/string 1))
 
-(defn strcat [& ps]
-  (dp/reduce ps rfs/string))
+(defn strcat
+  "Applies the parsers `ps` in sequence and returns the string concatenation of
+   their return values"
+  [& ps]
+  (dp/sequence rfs/string ps))
 
 (defn skipped [p]
   (fn [source reply]

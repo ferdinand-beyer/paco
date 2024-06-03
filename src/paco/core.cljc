@@ -135,13 +135,13 @@
   ([p1 p2 p3 p4 & more]
    (let [ps (list* p1 p2 p3 p4 (butlast more))
          f  (last more)]
-     (dp/reduce ps (completing conj #(apply f %))))))
+     (dp/sequence (completing conj #(apply f %)) ps))))
 
 (defn tuple*
   "Applies the parsers `ps` in sequence and returns a vector of
    their return values."
   [ps]
-  (dp/reduce ps rfs/vector))
+  (dp/sequence rfs/vector ps))
 
 ;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 (defn tuple
@@ -164,7 +164,7 @@
   ([p1 p2 p3]
    (dp/with-seq [_ p1, _ p2, x p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/reduce (list* p1 p2 p3 p4 more) rfs/last)))
+   (dp/sequence rfs/last (list* p1 p2 p3 p4 more))))
 
 ;; fparsec: .>>
 (defn then-skip
@@ -175,7 +175,7 @@
   ([p1 p2 p3]
    (dp/with-seq [x p1, _ p2, _ p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/reduce (list* p1 p2 p3 p4 more) rfs/first)))
+   (dp/sequence rfs/first (list* p1 p2 p3 p4 more))))
 
 ;; fparsetc: .>>.: like (cat p1 p2)
 
@@ -401,10 +401,10 @@
 ;;? Add a fn to treat a sequex as one unit to prevent flattening?
 
 (defn cat* [ps]
-  (dp/reduce ps rfs/seqex))
+  (dp/sequence rfs/seqex ps))
 
 (defn cat [& ps]
-  (dp/reduce ps rfs/seqex))
+  (dp/sequence rfs/seqex ps))
 
 ;; alternative names: opt
 (defn ?

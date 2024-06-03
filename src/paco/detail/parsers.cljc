@@ -1,17 +1,17 @@
 (ns paco.detail.parsers
   "Advanced low-level parsers, used by higher level ones."
-  (:refer-clojure :exclude [reduce])
+  (:refer-clojure :exclude [sequence])
   (:require [paco.detail.error :as error]
             [paco.detail.reply :as reply]
             [paco.detail.source :as source])
   #?(:cljs (:require-macros [paco.detail.parsers])))
 
-(defn reduce
-  "Applies the parsers `ps` in sequence, accumulating their return values
+(defn sequence
+  "Applies the `parsers` sequentially and collects their return values
    using the reducing function `rf`."
-  [ps rf]
+  [rf parsers]
   (fn [source reply]
-    (loop [ps (seq ps)
+    (loop [ps (seq parsers)
            result (rf)
            modcount1 (source/modcount source)
            error1 nil]
@@ -30,57 +30,46 @@
               reply)))
         (reply/with-value reply (rf result))))))
 
-(defn- emit-apply-seq
-  "Emits code that will apply the parsers `ps` in sequence
-   and evaluate `body` with the `binding-forms` bound to the
-   parser return values."
-  ([ps source reply binding-forms body]
-   (emit-apply-seq ps source reply binding-forms body -1 [] nil))
-  ([ps source reply binding-forms body modcount values error]
-   {:pre [(seq ps) (symbol? source) (symbol? reply)]}
-   (let [depth     (inc (count values))
-         modcount* (symbol (str "modcount" depth))
-         value*    (symbol (str "value" depth))
-         error*    (symbol (str "error" depth))]
-     `(let [~reply (~(first ps) ~source ~reply)]
-        (if (reply/ok? ~reply)
-          ~(if-some [next-ps (next ps)]
-             ;; recur to next parsers
-             `(let [~value* (reply/value ~reply)
-                    ~error* (reply/error ~reply)
-                    ~modcount* (source/modcount ~source)]
-                ~(emit-apply-seq next-ps source reply binding-forms body
-                                 modcount*
-                                 (conj values value*)
-                                 (if error
-                                   `(if (= ~modcount ~modcount*)
-                                      (error/merge ~error ~error*)
-                                      ~error*)
-                                   error*)))
-             ;; this was the last parser
-             (let [bindings (interleave binding-forms (conj values `(reply/value ~reply)))]
-               (if error
-                 `(let [result# (let [~@bindings] ~@body)
-                        ~error* (reply/error ~reply)]
-                    (if (= ~modcount (source/modcount ~source))
-                      (reply/ok ~reply result# (error/merge ~error ~error*))
-                      (reply/with-value ~reply result#)))
-                 `(reply/with-value ~reply (let [~@bindings] ~@body)))))
-          ;; parser failed
-          ~(if error
-             `(let [~error* (reply/error ~reply)]
-                (if (= ~modcount (source/modcount ~source))
-                  (reply/with-error ~reply (error/merge ~error ~error*))
-                  ~reply))
-             reply))))))
-
-(defn- emit-with-seq [bindings body]
-  {:pre [(vector? bindings) (even? (count bindings))]}
-  (let [pairs (partition 2 bindings)
-        bfs   (map first pairs)
-        ps    (map second pairs)]
-    (assert (every? symbol? ps))
-    (list `fn '[source reply] (emit-apply-seq ps 'source 'reply bfs body))))
+(defn- emit-with-seq
+  "Emits code for the `with-seq` macro."
+  [bindings body]
+  {:pre [(vector? bindings)
+         (seq bindings)
+         (even? (count bindings))]}
+  (let [source (gensym "source__")
+        reply  (gensym "reply__")
+        emit   (fn emit [[binding-form parser & more-bindings] modcount-before error-before]
+                 `(let [~reply (~parser ~source ~reply)]
+                    (if (reply/ok? ~reply)
+                      (let [~binding-form (reply/value ~reply)]
+                        ~(if (seq more-bindings)
+                           ;; recur to next parsers
+                           (let [modcount (gensym "modcount__")
+                                 error    (gensym "error__")]
+                             `(let [~modcount (source/modcount ~source)
+                                    ~error    (reply/error ~reply)]
+                                ~(emit more-bindings
+                                       modcount
+                                       (if error-before
+                                         `(if (= ~modcount-before ~modcount)
+                                            (error/merge ~error-before ~error)
+                                            ~error)
+                                         error))))
+                           ;; this was the last parser
+                           (if error-before
+                             `(let [value# (do ~@body)]
+                                (if (= ~modcount-before (source/modcount ~source))
+                                  (reply/ok ~reply value# (error/merge ~error-before (reply/error ~reply)))
+                                  (reply/with-value ~reply value#)))
+                             `(reply/with-value ~reply (do ~@body)))))
+                      ;; parser failed
+                      ~(if error-before
+                         `(let [error# (reply/error ~reply)]
+                            (if (= ~modcount-before (source/modcount ~source))
+                              (reply/with-error ~reply (error/merge ~error-before error#))
+                              ~reply))
+                         reply))))]
+    (list `fn [source reply] (emit bindings nil nil))))
 
 (defmacro with-seq
   "Creates a parser that applies parsers in sequence and transforms
@@ -153,6 +142,10 @@
             reply)))
       (reply/ok reply result error))))
 
+(defn- complete [rf reply]
+  (cond-> reply
+    (reply/ok? reply) (reply/update-value rf)))
+
 ;; Similar to fparsec's Inline.Many:
 ;; - stateFromFirstElement ~= (rf)
 ;; - foldState = (rf result value)
@@ -162,39 +155,29 @@
 ;; - resultForEmptySequence: n/a
 (defn repeat-many [sym p rf]
   (fn [source reply]
-    (let [reply (apply-many sym p rf source reply (rf))]
-      (cond-> reply
-        (reply/ok? reply) (reply/with-value (rf (reply/value reply)))))))
+    (complete rf (apply-many sym p rf source reply (rf)))))
 
 (defn repeat-times [sym p rf n]
   (fn [source reply]
-    (let [reply (apply-times sym p rf n source reply (rf))]
-      (cond-> reply
-        (reply/ok? reply) (reply/with-value (rf (reply/value reply)))))))
+    (complete rf (apply-times sym p rf n source reply (rf)))))
 
 (defn repeat-min [sym p rf min]
   (fn [source reply]
     (let [reply (apply-times sym p rf min source reply (rf))]
       (if (reply/ok? reply)
-        (let [reply (apply-many sym p rf source reply (reply/value reply))]
-          (cond-> reply
-            (reply/ok? reply) (reply/with-value (rf (reply/value reply)))))
+        (complete rf (apply-many sym p rf source reply (reply/value reply)))
         reply))))
 
 (defn repeat-max [sym p rf max]
   (fn [source reply]
-    (let [reply (apply-max sym p rf max source reply (rf))]
-      (cond-> reply
-        (reply/ok? reply) (reply/with-value (rf (reply/value reply)))))))
+    (complete rf (apply-max sym p rf max source reply (rf)))))
 
 (defn repeat-min-max [sym p rf min max]
   (let [max* (- max min)]
     (fn [source reply]
       (let [reply (apply-times sym p rf min source reply (rf))]
         (if (reply/ok? reply)
-          (let [reply (apply-max sym p rf max* source reply (reply/value reply))]
-            (cond-> reply
-              (reply/ok? reply) (reply/with-value (rf (reply/value reply)))))
+          (complete rf (apply-max sym p rf max* source reply (reply/value reply)))
           reply)))))
 
 ;;---------------------------------------------------------

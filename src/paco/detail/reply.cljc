@@ -13,6 +13,9 @@
   (with-value [this value])
   (with-error [this error]))
 
+(defn update-value [reply f]
+  (with-value reply (f (value reply))))
+
 (deftype MutableReply #?(:clj  [^:unsynchronized-mutable ^boolean ok?*
                                 ^:unsynchronized-mutable value*
                                 ^:unsynchronized-mutable error*]
