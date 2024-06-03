@@ -1,7 +1,6 @@
 (ns paco.helper
   (:require [paco.core :as p]
             [paco.detail.error :as error]
-            [paco.detail.parser :as parser]
             [paco.detail.reply :as reply]
             [paco.detail.source :as source]))
 
@@ -11,7 +10,7 @@
   ([p input]
    (let [source   (source/of input)
          modcount (source/modcount source)
-         reply    (parser/apply p source (reply/mutable-reply))]
+         reply    (p source (reply/mutable-reply))]
      {:ok?      (reply/ok? reply)
       :fail?    (not (reply/ok? reply))
       :value    (reply/value reply)

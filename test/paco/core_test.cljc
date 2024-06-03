@@ -698,15 +698,15 @@
     (is (= {\m 1, \i 4, \s 4, \p 2} (p/parse p "mississippi"))))
 
   (let [reply (helper/run (p/then (p/set-user-state 2)
-                                  (p/some-user-state even?)))]
+                                  (p/user-state-satisfy even?)))]
     (is (:ok? reply))
     (is (true? (:value reply))))
 
   (let [reply (helper/run (p/then (p/set-user-state 1)
-                                  (p/some-user-state even?)))]
+                                  (p/user-state-satisfy even?)))]
     (is (:fail? reply))
     (is (nil? (:error reply))))
 
   (is (= \x (p/parse (p/then (p/bind helper/any #(p/set-user-state %))
-                             (p/some-user-state #{\x}))
+                             (p/user-state-satisfy #{\x}))
                      "xyz"))))

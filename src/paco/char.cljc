@@ -3,7 +3,6 @@
   (:require [paco.char.preds :as preds]
             [paco.core :as p]
             [paco.detail.error :as error]
-            [paco.detail.parser :as parser]
             [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
@@ -220,12 +219,10 @@
   (dp/reduce ps rfs/string))
 
 (defn skipped [p]
-  (reify parser/IParser
-    (apply [_ source reply]
-      (source/with-release [mark (source/mark source)]
-        (let [reply (parser/apply p source reply)]
-          (cond-> reply
-            (reply/ok? reply) (reply/with-value (source/read-from source mark))))))
-    (children [_] [p])))
+  (fn [source reply]
+    (source/with-release [mark (source/mark source)]
+      (let [reply (p source reply)]
+        (cond-> reply
+          (reply/ok? reply) (reply/with-value (source/read-from source mark)))))))
 
 ;; fparsec: number parsers (int, float)
