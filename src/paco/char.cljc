@@ -163,6 +163,18 @@
 ;; fparsec: charsTillString
 #_(defn chars-until-str [s skip? max-count])
 
+(defn *str-until
+  ([p pend]
+   (*str-until p pend false))
+  ([p pend include-end?]
+   (dp/until `*str-until p pend rfs/string true include-end?)))
+
+(defn +str-until
+  ([p pend]
+   (+str-until p pend false))
+  ([p pend include-end?]
+   (dp/until `+str-until p pend rfs/string false include-end?)))
+
 ;; fparsec: manySatisfy
 ;; fparsec: manySatisfy2 -- different pred for first character
 ;; fparsec: many1Satisfy: one or more
@@ -173,10 +185,18 @@
   [pred]
   (let [pred (preds/pred pred)]
     (fn [source reply]
-      (let [start (source/index source)
-            value (when (pos? (source/skip-chars-while! source pred))
-                    (source/read-from source start))]
-        (reply/ok reply value)))))
+      (source/with-resource [mark (source/mark source)]
+        (let [value (when (pos? (source/skip-chars-while! source pred))
+                      (source/read-from source mark))]
+          (reply/ok reply value))))))
+
+(defn +satisfy [pred]
+  (let [pred (preds/pred pred)]
+    (fn [source reply]
+      (source/with-resource [mark (source/mark source)]
+        (if (pos? (source/skip-chars-while! source pred))
+          (reply/ok reply (source/read-from source mark))
+          (reply/fail reply (error/unexpected-token-or-end source)))))))
 
 (defn *skip-satisfy [pred]
   (let [pred (preds/pred pred)]
