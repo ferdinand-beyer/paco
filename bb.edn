@@ -1,19 +1,23 @@
 {:deps {com.fbeyer/paco {:local/root "."}}
  :pods {clj-kondo/clj-kondo {:version "2023.12.15"}}
- :tasks {compile {:depends [javac]}
-         javac (clojure "-T:build" "javac")
+ :tasks {compile {:doc "Compile dependency code"
+                  :depends [javac]}
+         javac {:doc "Compile Java code"
+                :task (clojure "-T:build" "javac")}
 
-         check (run '-check:all #_{:parallel true})
-         -check:all {:depends [check:clj-kondo check:eastwood]}
+         lint {:doc "Run all linters"
+               :task (run '-lint:all #_{:parallel true})}
+         -lint:all {:depends [lint:clj-kondo lint:eastwood]}
 
-         check:clj-kondo {:requires ([pod.borkdude.clj-kondo :as clj-kondo])
-                          :task (do
-                                  (println "== clj-kondo ==")
-                                  (clj-kondo/print! (clj-kondo/run! {:lint ["src"]})))}
+         lint:clj-kondo {:requires ([pod.borkdude.clj-kondo :as clj-kondo])
+                         :task (do
+                                 (println "== clj-kondo ==")
+                                 (clj-kondo/print! (clj-kondo/run! {:lint ["src"]})))}
 
-         check:eastwood (clojure "-M:eastwood")
+         lint:eastwood (clojure "-M:eastwood")
 
-         test (run '-test:all #_{:parallel true})
+         test {:doc "Run all tests"
+               :task (run '-test:all #_{:parallel true})}
          -test:all {:depends [test:clj test:cljs test:bb]}
 
          test:clj (let [args (cond-> ["-M:test:kaocha" "unit"]
@@ -38,11 +42,19 @@
                           (println "Running Babashka tests...")
                           (kaocha.runner/-main "unit"))}
 
-         jar (clojure "-T:build" "jar")
+         check {:doc "Run check tasks: Linters and tests"
+                :task (run '-check:all #_{:parallel true})}
+         -check:all {:depends [lint test]}
 
-         clean (clojure "-T:build" "clean")
+         jar {:doc "Build the Jar"
+              :depends [javac]
+              :task (clojure "-T:build" "jar")}
 
-         clj-kondo:init {:requires ([babashka.fs :as fs]
+         clean {:doc "Clean the output directory"
+                :task (clojure "-T:build" "clean")}
+
+         clj-kondo:init {:doc "Run clj-kondo initialisation"
+                         :requires ([babashka.fs :as fs]
                                     [pod.borkdude.clj-kondo :as clj-kondo])
                          :task (let [opts {:cache true
                                            :copy-configs true
@@ -52,4 +64,13 @@
                                                       fs/split-paths
                                                       (into [] (map str)))
                                            :parallel true}]
-                                 (clj-kondo/print! (clj-kondo/run! opts)))}}}
+                                 (clj-kondo/print! (clj-kondo/run! opts)))}
+
+         assemble {:doc "Build the project artifacts"
+                   :depends [clean compile jar]}
+
+         build {:doc "Build and test the project"
+                :depends [assemble check]}
+
+         deploy {:doc "Deploy to Clojars"
+                 :task (clojure "-T:build" "deploy")}}}
