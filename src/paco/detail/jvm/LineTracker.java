@@ -35,7 +35,7 @@ public final class LineTracker {
     public boolean track(int index, int ch) {
         return track(index, ch, ICharSource.EOS);
     }
-    
+
     public boolean track(int index, int ch, int nextCh) {
         if (index > maxIndex) {
             maxIndex = index;
@@ -94,7 +94,7 @@ public final class LineTracker {
     }
 
     private static long lineColumn(long line, long column) {
-        return (line << 32) | column;
+        return (line << Integer.SIZE) | column;
     }
 
     private long searchPosition(int index) {

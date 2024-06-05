@@ -223,22 +223,22 @@ public class Source implements ILineTrackingSource, IUserStateSource {
         }
 
         @Override
-        public final long position(int index) {
+        public long position(int index) {
             return lineTracker.position(index);
         }
 
         @Override
-        public final int skip() {
+        public int skip() {
             return modifiedUnlessZero(lineTracker.skip(charSource()));
         }
 
         @Override
-        public final int skip(int n) {
+        public int skip(int n) {
             return modifiedUnlessZero(lineTracker.skip(charSource(), n));
         }
 
         @Override
-        public final String readString(int n) {
+        public String readString(int n) {
             final String s = charSource().peekString(n);
             if (s != null) {
                 modifiedUnlessZero(lineTracker.skip(charSource(), s.length()));
@@ -247,7 +247,7 @@ public class Source implements ILineTrackingSource, IUserStateSource {
         }
 
         @Override
-        public final int readCharWhen(ICharPredicate pred) {
+        public int readCharWhen(ICharPredicate pred) {
             final ICharSource source = charSource();
             final int ch = source.readCharWhen(pred);
             if (ch >= 0) {
@@ -258,7 +258,7 @@ public class Source implements ILineTrackingSource, IUserStateSource {
         }
 
         @Override
-        public final int skipCharsWhile(ICharPredicate pred) {
+        public int skipCharsWhile(ICharPredicate pred) {
             return modifiedUnlessZero(lineTracker.skipCharsWhile(charSource(), pred));
         }
     }

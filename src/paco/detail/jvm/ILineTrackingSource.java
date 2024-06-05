@@ -8,5 +8,5 @@ public interface ILineTrackingSource extends ICharSource {
 
     int untrackedSkip();
 
-    int untrackedSkip(int n);    
+    int untrackedSkip(int n);
 }
