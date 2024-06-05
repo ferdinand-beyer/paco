@@ -64,7 +64,7 @@
         pstring  (fn [source reply]
                    ;; skip over start quote
                    (source/skip! source)
-                   (source/with-release [mark (source/mark source)]
+                   (source/with-resource [mark (source/mark source)]
                      (loop []
                        (if (source/read-char-when! source regular)
                          (recur)

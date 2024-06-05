@@ -1,22 +1,34 @@
 (ns paco.detail.reply)
 
 (defprotocol IReplyFactory
-  (ok [this value] [this value error])
-  (fail [this error]))
+  (ok [reply-factory value] [reply-factory value error]
+    "Creates a successful reply with a result value.  Successful replies
+     can also carry an error, representing any additional input the parser
+     could have consumed.")
+  (fail [reply-factory error]
+    "Creates an unsuccessful reply with an error."))
 
 (defprotocol IReply
-  (ok? [this])
-  (value [this])
-  (error [this])
+  (ok? [reply]
+    "Returns true if this reply is successful.")
+  (value [reply]
+    "Returns the result value of the reply.")
+  (error [reply]
+    "Returns the error of the reply.")
 
-  (with-ok [this ok?])
-  (with-value [this value])
-  (with-error [this error]))
+  (with-ok [reply ok?]
+    "Returns an updated reply with the success flag set to `ok?`.")
+  (with-value [reply value]
+    "Returns an updated reply with the result value set to `value`.")
+  (with-error [reply error]
+    "Returns an updated reply with the error set to `error`."))
 
-(defn update-value [reply f]
+(defn update-value
+  "Updates the result value of `reply` using `f`."
+  [reply f]
   (with-value reply (f (value reply))))
 
-(deftype MutableReply #?(:clj  [^:unsynchronized-mutable ^boolean ok?*
+(deftype MutableReply #?(:clj  [^:unsynchronized-mutable ok?*
                                 ^:unsynchronized-mutable value*
                                 ^:unsynchronized-mutable error*]
                          :cljs [^:mutable ok?*
@@ -39,20 +51,22 @@
 
   IReplyFactory
   (ok [this value]
-    (set! ok?* (boolean true))
+    (set! ok?* true)
     (set! value* value)
     (set! error* nil)
     this)
   (ok [this value error]
-    (set! ok?* (boolean true))
+    (set! ok?* true)
     (set! value* value)
     (set! error* error)
     this)
   (fail [this error]
-    (set! ok?* (boolean false))
+    (set! ok?* false)
     (set! value* nil)
     (set! error* error)
     this))
 
-(defn mutable-reply []
+(defn mutable-reply
+  "Creates a mutable reply object."
+  []
   (MutableReply. true nil nil))

@@ -223,7 +223,7 @@
 
 (defn skipped [p]
   (fn [source reply]
-    (source/with-release [mark (source/mark source)]
+    (source/with-resource [mark (source/mark source)]
       (let [reply (p source reply)]
         (cond-> reply
           (reply/ok? reply) (reply/with-value (source/read-from source mark)))))))

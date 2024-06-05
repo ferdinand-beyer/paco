@@ -1,4 +1,5 @@
 (ns paco.detail.source.impl
+  "Pure Clojure(Script) source implementation."
   (:refer-clojure :exclude [peek])
   (:require #?@(:cljs [[goog.array :as garr]
                        [goog.string :as gstr]])

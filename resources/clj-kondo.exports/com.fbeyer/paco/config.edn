@@ -1,4 +1,4 @@
 {:lint-as {paco.core/let clojure.core/let
            paco.core/with clojure.core/let
            paco.detail.parsers/with-seq clojure.core/let
-           paco.detail.source/with-release clojure.core/with-open}}
+           paco.detail.source/with-resource clojure.core/with-open}}

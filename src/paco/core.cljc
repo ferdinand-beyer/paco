@@ -211,7 +211,7 @@
   [p label]
   (let [expected-error (error/expected label)]
     (fn [source reply]
-      (source/with-release [mark (source/mark source)]
+      (source/with-resource [mark (source/mark source)]
         (let [reply (p source reply)]
           (if (reply/ok? reply)
             (if (source/at? source mark)
@@ -240,7 +240,7 @@
    state."
   [p]
   (fn [source reply]
-    (source/with-release [mark (source/mark source)]
+    (source/with-resource [mark (source/mark source)]
       (let [reply (p source reply)]
         (if (or (reply/ok? reply) (source/at? source mark))
           reply
@@ -256,7 +256,7 @@
   ([p] (?atomic p nil))
   ([p not-found]
    (fn [source reply]
-     (source/with-release [mark (source/mark source)]
+     (source/with-resource [mark (source/mark source)]
        (let [reply (p source reply)]
          (if (reply/ok? reply)
            reply
@@ -274,6 +274,13 @@
 #_(defn catch
     "When `p` fails, backtracks and resumes with the parser returned by
    `(f error)`."
+    [p f])
+
+;; Advanced: Full control.  Handler needs to supply a reply.
+#_(defn recover
+    "Applies the parser `p`.  If `p` fails, calls:
+
+   `(f source mark error reply)`"
     [p f])
 
 ;;---------------------------------------------------------
@@ -343,7 +350,7 @@
   ([p label]
    (let [expected-error (some-> label error/expected)]
      (fn [source reply]
-       (source/with-release [mark (source/mark source)]
+       (source/with-resource [mark (source/mark source)]
          (let [reply (p source reply)]
            ;; TODO: Benchmark if we need the conditional
            (when-not (source/at? source mark)
@@ -363,7 +370,7 @@
   ([p label]
    (let [expected-error (some-> label error/unexpected)]
      (fn [source reply]
-       (source/with-release [mark (source/mark source)]
+       (source/with-resource [mark (source/mark source)]
          (let [reply (p source reply)]
            ;; TODO: Benchmark if we need the conditional
            (when-not (source/at? source mark)
@@ -380,14 +387,14 @@
 (defn look-ahead
   [p]
   (fn [source reply]
-    (source/with-release [mark (source/mark source)]
+    (source/with-resource [mark (source/mark source)]
       (let [reply (p source reply)]
         (if (reply/ok? reply)
           (do
             ;; TODO: Benchmark if we need the conditional
             (when-not (source/at? source mark)
               (source/backtrack! source mark))
-              ;; Discard error messages
+            ;; Discard error messages
             (reply/with-error reply nil))
           (if (source/at? source mark)
             reply
