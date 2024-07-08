@@ -112,6 +112,8 @@
 
 ;; ? rename to `let`?
 ;; alternative names: let-bind,  plet
+;; let-bind: connect with bind and return a parser
+;; let-return: use dp/with-seq and return a value
 (defmacro with
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
@@ -455,12 +457,12 @@
 (defn *sep-by
   ([p psep] (*sep-by p psep nil))
   ([p psep end?]
-   (dp/sep-by `*sep-by p psep rfs/vector true end?)))
+   (dp/sep-by `*sep-by p psep rfs/seqex true end?)))
 
 (defn +sep-by
   ([p psep] (+sep-by p psep nil))
   ([p psep end?]
-   (dp/sep-by `+sep-by p psep rfs/vector false end?)))
+   (dp/sep-by `+sep-by p psep rfs/seqex false end?)))
 
 (defn *skip-sep-by
   ([p psep] (*skip-sep-by p psep nil))
@@ -476,12 +478,12 @@
 (defn *until
   ([p pend] (*until p pend nil))
   ([p pend include-end?]
-   (dp/until `*until p pend rfs/vector true include-end?)))
+   (dp/until `*until p pend rfs/seqex true include-end?)))
 
 (defn +until
   ([p pend] (+until p pend nil))
   ([p pend include-end?]
-   (dp/until `+until p pend rfs/vector false include-end?)))
+   (dp/until `+until p pend rfs/seqex false include-end?)))
 
 (defn *skip-until [p pend]
   (dp/until `*skip-until p pend rfs/ignore true false))
