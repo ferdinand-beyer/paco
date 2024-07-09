@@ -2,7 +2,6 @@
   (:require [clojure.test :refer [deftest is testing]]
             [paco.core :as p]
             [paco.detail.error :as error]
-            [paco.detail.position :as pos]
             [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
@@ -686,10 +685,6 @@
 (deftest index-test
   (is (= 0 (p/parse p/index "")))
   (is (= 3 (p/parse (p/then (p/repeat helper/any 3) p/index) "abcdef"))))
-
-(deftest pos-test
-  (is (= (pos/position 0 0) (p/parse p/pos "")))
-  (is (= (pos/position 1 2) (p/parse (p/then (p/repeat p/any-token 6) p/pos) "abc\ndef"))))
 
 (deftest user-state-test
   (let [p (p/then (p/set-user-state {})

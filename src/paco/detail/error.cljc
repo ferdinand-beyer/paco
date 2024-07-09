@@ -1,7 +1,6 @@
 (ns paco.detail.error
   (:refer-clojure :exclude [merge])
   (:require [clojure.string :as str]
-            [paco.detail.position :as pos]
             [paco.detail.source :as source])
   (:import #?(:clj [java.io StringWriter]
               :cljs [goog.string StringBuffer])))
@@ -150,9 +149,9 @@
        (-write-msg! msg writer opts))
      (when pos
        (write! writer " at line ")
-       (write! writer (inc (pos/line-index pos)))
+       (write! writer (inc (source/pos-line pos)))
        (write! writer ", column ")
-       (write! writer (inc (pos/column-index pos)))))))
+       (write! writer (inc (source/pos-col pos)))))))
 
 (defn string
   "Returns a string representation of `error`."
@@ -190,6 +189,12 @@
   (-compare-msgs [_ other]
     (compare input (.-input ^Input other))))
 
+(defn- compare-positions [pos1 pos2]
+  (let [d (#?(:clj Long/compare :default compare) (source/pos-line pos1) (source/pos-line pos2))]
+    (if (zero? d)
+      (#?(:clj Long/compare :default compare) (source/pos-col pos1) (source/pos-col pos2))
+      d)))
+
 ;; alternative name: backtracked
 (defrecord Nested [type label pos error]
   IMessage
@@ -202,7 +207,7 @@
                    (write! writer " could not be parsed because: ")))
     (write-messages! error writer pos opts))
   (-compare-msgs [_ other]
-    (let [dpos (pos/compare pos (.-pos ^Nested other))]
+    (let [dpos (compare-positions pos (.-pos ^Nested other))]
       (if (zero? dpos)
         (let [dlabel (compare label (.-label ^Nested other))]
           (if (zero? dlabel)

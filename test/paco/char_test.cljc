@@ -6,6 +6,14 @@
             [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
+(deftest position-test
+  (let [pos (p/parse c/position "")]
+    (is (= 0 (c/line-index pos)))
+    (is (= 0 (c/column-index pos))))
+  (let [pos (p/parse (p/then (p/repeat p/any-token 6) c/position) "abc\ndef")]
+    (is (= 1 (c/line-index pos)))
+    (is (= 2 (c/column-index pos)))))
+
 (deftest any-char-test
   (let [reply (helper/run c/any-char "xyz")]
     (is (:ok? reply))
@@ -184,4 +192,4 @@
 (deftest skipped-test
   (is (= "abc" (p/parse (c/skipped (p/* c/any-char)) "abc")))
   (let [reply (helper/run (c/skipped (p/* c/any-char)) "one\ntwo\n")]
-    (is (= 2 (get-in reply [:position :line])))))
+    (is (= 2 (c/line-index (:position reply))))))

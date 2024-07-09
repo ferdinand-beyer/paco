@@ -542,18 +542,12 @@
 ;; Handling state
 
 (defn index
-  "Returns the index of the next token in the input stream."
+  "This parser returns the index of the next token in the input stream."
   [source reply]
   (reply/ok reply (source/index source)))
 
-;; TODO: This assumes an underlying char stream? => move to `paco.char`?
-(defn pos
-  "Returns the current position in the input stream."
-  [source reply]
-  (reply/ok reply (source/position source)))
-
 (defn user-state
-  "Returns the current user state."
+  "Thus parser returns the current user state."
   [source reply]
   (reply/ok reply (source/user-state source)))
 

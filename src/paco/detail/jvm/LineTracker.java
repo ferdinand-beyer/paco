@@ -39,6 +39,7 @@ public final class LineTracker {
     public boolean track(int index, int ch, int nextCh) {
         if (index > maxIndex) {
             maxIndex = index;
+            // For Unicode support: Also check for 0x85, 0x2028, 0x2029
             if (ch == '\n') {
                 pushLineStart(index + 1);
                 return true;

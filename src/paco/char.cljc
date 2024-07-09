@@ -9,6 +9,24 @@
             [paco.detail.source :as source]))
 
 ;;---------------------------------------------------------
+;; Character source position
+
+(defn position
+  "Returns the current position in the input stream."
+  [source reply]
+  (reply/ok reply (source/position source)))
+
+(defn line-index
+  "Returns the line index of the position `pos`.  The first line index is 0."
+  [pos]
+  (source/pos-line pos))
+
+(defn column-index
+  "Returns the column index of the position `pos`.  The first column index is 0."
+  [pos]
+  (source/pos-col pos))
+
+;;---------------------------------------------------------
 ;; Character parsers
 
 (defn- satisfy-char [pred expected-error]

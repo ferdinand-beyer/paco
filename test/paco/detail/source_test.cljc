@@ -1,6 +1,5 @@
 (ns paco.detail.source-test
   (:require [clojure.test :refer [deftest is testing]]
-            [paco.detail.position :as pos]
             [paco.detail.source :as source]))
 
 (deftest string-navigation-test
@@ -116,41 +115,41 @@
       (source/skip! s)
       (is (= 1 (source/index s)))
       (let [pos (source/position s)]
-        (is (= 0 (pos/line-index pos)))
-        (is (= 1 (pos/column-index pos))))))
+        (is (= 0 (source/pos-line pos)))
+        (is (= 1 (source/pos-col pos))))))
 
   (testing "tracks Unix-style newlines"
     (let [s (source/of "\n")]
       (source/skip! s)
       (is (= 1 (source/index s)))
       (let [pos (source/position s)]
-        (is (= 1 (pos/line-index pos)))
-        (is (= 0 (pos/column-index pos))))))
+        (is (= 1 (source/pos-line pos)))
+        (is (= 0 (source/pos-col pos))))))
 
   (testing "tracks Mac-style newlines"
     (let [s (source/of "\r")]
       (source/skip! s)
       (is (= 1 (source/index s)))
       (let [pos (source/position s)]
-        (is (= 1 (pos/line-index pos)))
-        (is (= 0 (pos/column-index pos))))))
+        (is (= 1 (source/pos-line pos)))
+        (is (= 0 (source/pos-col pos))))))
 
   (testing "tracks Windows-style newlines"
     (let [s (source/of "\r\n")]
       (source/skip! s)
       (is (= 1 (source/index s)))
       (let [pos (source/position s)]
-        (is (= 0 (pos/line-index pos)))
-        (is (= 1 (pos/column-index pos))))
+        (is (= 0 (source/pos-line pos)))
+        (is (= 1 (source/pos-col pos))))
       (source/skip! s)
       (is (= 2 (source/index s)))
       (let [pos (source/position s)]
-        (is (= 1 (pos/line-index pos)))
-        (is (= 0 (pos/column-index pos))))))
+        (is (= 1 (source/pos-line pos)))
+        (is (= 0 (source/pos-col pos))))))
 
   (testing "line tracking disabled"
     (let [s (source/of "a\nb\nc\n" {:line-tracking? false})]
       (source/skip! s 6)
       (let [pos (source/position s)]
-        (is (= 0 (pos/line-index pos)))
-        (is (= 6 (pos/column-index pos)))))))
+        (is (= 0 (source/pos-line pos)))
+        (is (= 6 (source/pos-col pos)))))))

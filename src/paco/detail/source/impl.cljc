@@ -1,11 +1,10 @@
 (ns paco.detail.source.impl
   "Pure Clojure(Script) source implementation."
   (:refer-clojure :exclude [peek])
-  (:require #?@(:cljs [[goog.array :as garr]
-                       [goog.string :as gstr]])
-            [paco.detail.position :as pos])
-  #?(:clj (:import [java.util ArrayList Collections]
-                   [java.util.regex Pattern])))
+  #?(:clj  (:import [java.util ArrayList Collections]
+                    [java.util.regex Pattern])
+     :cljs (:require [goog.array :as garr]
+                     [goog.string :as gstr])))
 
 #?(:clj (set! *warn-on-reflection* true))
 
@@ -132,6 +131,8 @@
   (-track-skip-while! [tracker source pred])
   (-position [tracker index]))
 
+(defrecord Position [line col])
+
 (deftype SourceMark #?(:clj  [mark ^long modcount user-state]
                        :cljs [mark ^number modcount user-state]))
 
@@ -220,11 +221,11 @@
   (position [_]
     (if line-tracker
       (-position line-tracker (index source))
-      (pos/position 0 (index source))))
+      (Position. 0 (index source))))
   (position [_ index]
     (if line-tracker
       (-position line-tracker index)
-      (pos/position 0 index)))
+      (Position. 0 index)))
   (untracked-skip! [_]
     (let [k (skip! source)]
       (when-not (zero? k)
@@ -291,11 +292,11 @@
       (if (< i -1)
         (let [line (-> i unchecked-negate-int unchecked-dec-int)
               k    (unchecked-dec-int line)]
-          (pos/position line (unchecked-subtract-int index #?(:clj  (.get starts k)
-                                                              :cljs (aget starts k)))))
+          (Position. line (unchecked-subtract-int index #?(:clj  (.get starts k)
+                                                           :cljs (aget starts k)))))
         (if (>= i 0)
-          (pos/position (unchecked-inc-int i) 0)
-          (pos/position 0 index))))))
+          (Position. (unchecked-inc-int i) 0)
+          (Position. 0 index))))))
 
 (defn- line-tracker []
   (LineTracker. #?(:clj (ArrayList.) :cljs #js []) -1))

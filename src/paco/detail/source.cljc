@@ -2,8 +2,7 @@
   (:refer-clojure :exclude [peek re-groups])
   (:require #?(:bb      [paco.detail.source.impl :as impl]
                :clj     [clojure.core]
-               :default [paco.detail.source.impl :as impl])
-            #?(:clj [paco.detail.position :as pos]))
+               :default [paco.detail.source.impl :as impl]))
   #?@(:bb   []
       :clj  [(:import [paco.detail.jvm ICharPredicate Source])]
       :cljs [(:require-macros paco.detail.source)]))
@@ -240,25 +239,38 @@
 
 ;; ILineTrackingSource
 
-#?(:clj (defn -long->position [^long p]
-          (pos/position (bit-shift-right p 32) (bit-and p 0xffffffff))))
-
 (defn position
   "Returns the position (line and column indexes) of the `source`, at
    the current or a previous `index`."
   #?(:clj {:inline (fn
                      ([source]
-                      `(-long->position (.position ~(tag source))))
+                      `(.position ~(tag source)))
                      ([source index]
-                      `(-long->position (.position ~(tag source) ~index))))})
+                      `(.position ~(tag source) ~index)))})
   ([source]
    #?(:bb      (impl/position source)
-      :clj     (-long->position (.position ^Source source))
+      :clj     (.position ^Source source)
       :default (impl/position source)))
   ([source index]
    #?(:bb      (impl/position source index)
-      :clj     (-long->position (.position ^Source source index))
+      :clj     (.position ^Source source index)
       :default (impl/position source index))))
+
+(defn pos-line
+  "Returns the line index of the position `pos`.  The first line index is 0."
+  #?(:clj {:inline (fn [pos] `(bit-shift-right ~pos 32))})
+  [pos]
+  #?(:bb      (:line pos)
+     :clj     (bit-shift-right pos 32)
+     :default (.-line ^impl/Position pos)))
+
+(defn pos-col
+  "Returns the column index of the position `pos`.  The first column index is 0."
+  #?(:clj {:inline (fn [pos] `(bit-and ~pos 0xffffffff))})
+  [pos]
+  #?(:bb      (:col pos)
+     :clj     (bit-and pos 0xffffffff)
+     :default (.-col ^impl/Position pos)))
 
 (defn untracked-skip!
   "Like `skip!`, but does not track line numbers.  For optimisation, when we
