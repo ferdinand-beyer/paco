@@ -11,6 +11,7 @@
      :cljs (.charCodeAt ^js ch 0)))
 
 (defn pred
+  "Coerce `x` to a character predicate."
   #?(:clj {:inline (fn [x] `(ICharPredicate/of ~x))})
   [x]
   #?(:bb   x
@@ -18,6 +19,7 @@
      :clj  (ICharPredicate/of x)))
 
 (defn test
+  "Tests `ch` against the character predicate `pred`."
   #?(:clj {:inline (fn [pred ch]
                      (list '.test (vary-meta pred assoc :tag 'paco.detail.jvm.ICharPredicate) ch))})
   [pred ch]
@@ -35,20 +37,34 @@
      :clj  (ICharPredicate/notEquals ch)
      :cljs #(not= ch %)))
 
-(defn not [pred]
-  #?(:bb   (complement pred)
-     :cljs (complement pred)
-     :clj  (ICharPredicate/not pred)))
+(defn not [p]
+  #?(:bb   (complement p)
+     :cljs (complement p)
+     :clj  (ICharPredicate/not (pred p))))
 
-(defn and [p1 p2]
-  #?(:bb   (every-pred p1 p2)
-     :cljs (every-pred p1 p2)
-     :clj  (ICharPredicate/and p1 p2)))
+(def and
+  #?(:bb   every-pred
+     :cljs every-pred
+     :clj  (fn
+             ([p] (pred p))
+             ([p1 p2] (ICharPredicate/and (pred p1) (pred p2)))
+             ([p1 p2 & ps]
+              (reduce (fn [p x]
+                        (ICharPredicate/and p (pred x)))
+                      (ICharPredicate/and (pred p1) (pred p2))
+                      ps)))))
 
-(defn or [p1 p2]
-  #?(:bb   (some-fn p1 p2)
-     :cljs (some-fn p1 p2)
-     :clj  (ICharPredicate/or p1 p2)))
+(def or
+  #?(:bb   some-fn
+     :cljs some-fn
+     :clj  (fn
+             ([p] (pred p))
+             ([p1 p2] (ICharPredicate/or (pred p1) (pred p2)))
+             ([p1 p2 & ps]
+              (reduce (fn [p x]
+                        (ICharPredicate/or p (pred x)))
+                      (ICharPredicate/or (pred p1) (pred p2))
+                      ps)))))
 
 (defn among [chars]
   #?(:bb   #(str/index-of chars %)
@@ -72,21 +88,27 @@
 
 (def ascii-upper?
   "Returns true if `ch` is a ASCII upper-case letter (A-Z)."
-  #?(:bb   (in-range \A \Z)
-     :cljs (in-range \A \Z)
-     :clj  ICharPredicate/ASCII_UPPER))
+  (in-range \A \Z))
 
 (def ascii-lower?
   "Returns true if `ch` is a ASCII lower-case letter (a-z)."
-  #?(:bb   (in-range \a \z)
-     :cljs (in-range \a \z)
-     :clj  ICharPredicate/ASCII_LOWER))
+  (in-range \a \z))
 
 (def ascii-letter?
   "Returns true if `ch` is a ASCII letter (a-z, A-Z)."
-  #?(:bb   (or ascii-upper? ascii-lower?)
-     :cljs (or ascii-upper? ascii-lower?)
-     :clj  ICharPredicate/ASCII_LETTER))
+  (or ascii-upper? ascii-lower?))
+
+(def space?
+  "Returns true if `ch` is a common whitespace character: space, tabulator,
+   newline or carriage return."
+  (among " \t\n\r"))
+
+(def unicode-space?
+  "Returns true if `ch` is a Unicode space character (any space separator,
+   line separator, or paragraph separator)."
+  #?(:bb   #(Character/isSpaceChar (.charValue ^Character %))
+     :clj  ICharPredicate/SPACE
+     :cljs #(.test #"(?u)^\s$" %)))
 
 ;; https://unicode.org/reports/tr18/#General_Category_Property
 
@@ -116,18 +138,12 @@
 
 (def digit?
   "Returns true if `ch` is a decimal digit (0-9)."
-  #?(:bb   (in-range \0 \9)
-     :cljs (in-range \0 \9)
-     :clj  ICharPredicate/DIGIT))
+  (in-range \0 \9))
 
 (def hex?
   "Returns true if `ch` is a hexadecimal digit (0-9, a-f, A-F)."
-  #?(:bb   (or (in-range \0 \9) (or (in-range \a \f) (in-range \A \F)))
-     :cljs (or (in-range \0 \9) (or (in-range \a \f) (in-range \A \F)))
-     :clj  ICharPredicate/HEX))
+  (or digit? (in-range \a \f) (in-range \A \F)))
 
 (def octal?
   "Returns true if `ch` is an octal digit (0-7)."
-  #?(:bb   (in-range \0 \7)
-     :cljs (in-range \0 \7)
-     :clj  ICharPredicate/OCTAL))
+  (in-range \0 \7))

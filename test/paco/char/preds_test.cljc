@@ -1,5 +1,5 @@
 (ns paco.char.preds-test
-  (:require [clojure.test :refer [are deftest]]
+  (:require [clojure.test :refer [are deftest is]]
             [paco.char.preds :as preds]))
 
 (deftest ascii-upper?-test
@@ -41,3 +41,24 @@
 (deftest octal?-test
   (are [ch] (preds/test preds/octal? ch) \0 \1 \5 \7)
   (are [ch] (not (preds/test preds/octal? ch)) \8 \9 \a \A \Æ \æ \ß \? \u0000))
+
+(deftest and-test
+  (is (preds/test (preds/and preds/digit?) \7))
+  (let [p (preds/and preds/digit? preds/octal?)]
+    (is (preds/test p \7))
+    (is (not (preds/test p \9))))
+  (let [p (preds/and preds/digit? preds/octal? #(= \5 %))]
+    (is (preds/test p \5))
+    (is (not (preds/test p \4)))))
+
+(deftest or-test
+  (is (preds/test (preds/or preds/digit?) \7))
+  (let [p (preds/or preds/digit? preds/letter?)]
+    (is (preds/test p \7))
+    (is (preds/test p \x))
+    (is (not (preds/test p \space))))
+  (let [p (preds/or preds/digit? preds/letter? (preds/among "_-$"))]
+    (is (preds/test p \7))
+    (is (preds/test p \x))
+    (is (preds/test p \$))
+    (is (not (preds/test p \newline)))))

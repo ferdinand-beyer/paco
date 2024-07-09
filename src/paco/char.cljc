@@ -11,27 +11,6 @@
 ;;---------------------------------------------------------
 ;; Character parsers
 
-(defn newline-return [value]
-  (let [expected-error (error/expected "newline")]
-    (fn [source reply]
-      (if-let [ch (source/peek source)]
-        (if (= \newline ch)
-          (do
-            (source/skip! source)
-            (reply/ok reply value))
-          (if (= \return ch)
-            (do
-              (source/skip! source)
-              (when (= \newline (source/peek source))
-                (source/skip! source))
-              (reply/ok reply value))
-            (reply/fail reply (error/merge expected-error (error/unexpected-input ch)))))
-        (reply/fail reply error/unexpected-end)))))
-
-(def newline (newline-return \newline))
-
-(def skip-newline (newline-return nil))
-
 (defn- satisfy-char [pred expected-error]
   (let [pred (preds/pred pred)]
     (fn [source reply]
@@ -78,6 +57,40 @@
   ([min-ch max-ch label]
    (satisfy (preds/in-range min-ch max-ch) label)))
 
+(defn newline-return [value]
+  (let [expected-error (error/expected "newline")]
+    (fn [source reply]
+      (if-let [ch (source/peek source)]
+        (if (= \newline ch)
+          (do
+            (source/skip! source)
+            (reply/ok reply value))
+          (if (= \return ch)
+            (do
+              (source/skip! source)
+              (when (= \newline (source/peek source))
+                (source/skip! source))
+              (reply/ok reply value))
+            (reply/fail reply (error/merge expected-error (error/unexpected-input ch)))))
+        (reply/fail reply error/unexpected-end)))))
+
+(def newline
+  "Parses a common newline sequence: `\\n`, `\\r`, or `\\r\\n`, normalizing the
+   return value to `\\n`."
+  (newline-return \newline))
+
+(def skip-newline (newline-return nil))
+
+(def unicode-newline
+  "Parses any Unicode newline sequence and returns `\\n`."
+  (p/alt newline (p/return (any-of "\u0085\u2028\u2029") \newline)))
+
+(def tab
+  (char \tab))
+
+(def space
+  (satisfy preds/space? "whitespace character"))
+
 (def ascii-upper
   (satisfy preds/ascii-upper? "ASCII upper-case letter"))
 
@@ -110,10 +123,6 @@
 (def octal
   "Parses an octal digit."
   (satisfy preds/octal? "octal digit"))
-
-;; fparsec: tab
-;; fparsec: newline, skipNewline, newlineReturn + unicode variants
-;; fparsec: spaces, spaces1 + unicode variants
 
 ;;---------------------------------------------------------
 ;; String parsers
@@ -204,6 +213,24 @@
       (source/skip-chars-while! source pred)
       (reply/ok reply nil))))
 
+(defn +skip-satisfy
+  ([pred]
+   (+skip-satisfy pred nil))
+  ([pred label]
+   (let [unexpected (when label (error/unexpected label))]
+     (fn [source reply]
+       (if (pos? (source/skip-chars-while! source pred))
+         (reply/ok reply nil)
+         (reply/fail reply unexpected))))))
+
+(def *space
+  "- fparsec: spaces"
+  (*skip-satisfy preds/space?))
+
+(def +space
+  "- fparsec: spaces1"
+  (+skip-satisfy preds/space? "whitespace characters"))
+
 (defn- re-match-length [m]
   #?(:bb   (- (.end m) (.start m))
      :clj  (unchecked-subtract-int
@@ -241,7 +268,9 @@
   [& ps]
   (dp/sequence rfs/string ps))
 
-(defn skipped [p]
+(defn skipped
+  "Applies the parser `p` and returns the skipped source characters as a string."
+  [p]
   (fn [source reply]
     (source/with-resource [mark (source/mark source)]
       (let [reply (p source reply)]

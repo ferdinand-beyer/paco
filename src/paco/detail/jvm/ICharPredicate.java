@@ -5,17 +5,11 @@ import clojure.lang.IFn;
 @FunctionalInterface
 public interface ICharPredicate {
 
-    ICharPredicate ASCII_UPPER = inRange('A', 'Z');
-    ICharPredicate ASCII_LOWER = inRange('a', 'z');
-    ICharPredicate ASCII_LETTER = or(ASCII_LOWER, ASCII_UPPER);
     ICharPredicate UPPER = Character::isUpperCase;
     ICharPredicate LOWER = Character::isLowerCase;
     ICharPredicate LETTER = Character::isLetter;
-    ICharPredicate WHITESPACE = Character::isWhitespace;
+    ICharPredicate SPACE = Character::isSpaceChar;
     ICharPredicate ISO_CONTROL = Character::isISOControl;
-    ICharPredicate DIGIT = inRange('0', '9');
-    ICharPredicate HEX = or(DIGIT, or(inRange('a', 'f'), inRange('A', 'F')));
-    ICharPredicate OCTAL = inRange('0', '7');
 
     boolean test(char ch);
 
