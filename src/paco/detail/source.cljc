@@ -4,7 +4,7 @@
                :clj     [clojure.core]
                :default [paco.detail.source.impl :as impl]))
   #?@(:bb   []
-      :clj  [(:import [paco.detail.jvm ICharPredicate Source])]
+      :clj  [(:import [paco.detail.jvm ICharPredicate ILineTrackingSource Source])]
       :cljs [(:require-macros paco.detail.source)]))
 
 #?(:clj (set! *warn-on-reflection* true))
@@ -247,18 +247,18 @@
 
 (defn pos-line
   "Returns the line index of the position `pos`.  The first line index is 0."
-  #?(:clj {:inline (fn [pos] `(bit-shift-right ~pos 32))})
+  #?(:clj {:inline (fn [pos] `(ILineTrackingSource/lineIndex ~pos))})
   [pos]
   #?(:bb      (:line pos)
-     :clj     (bit-shift-right pos 32)
+     :clj     (ILineTrackingSource/lineIndex pos)
      :default (.-line ^impl/Position pos)))
 
 (defn pos-col
   "Returns the column index of the position `pos`.  The first column index is 0."
-  #?(:clj {:inline (fn [pos] `(bit-and ~pos 0xffffffff))})
+  #?(:clj {:inline (fn [pos] `(ILineTrackingSource/columnIndex ~pos))})
   [pos]
   #?(:bb      (:col pos)
-     :clj     (bit-and pos 0xffffffff)
+     :clj     (ILineTrackingSource/columnIndex ~pos)
      :default (.-col ^impl/Position pos)))
 
 (defn untracked-skip!
@@ -280,9 +280,16 @@
 
 (defn of
   "Creates a source from `input`."
-  ([input]
-   (of input nil))
-  ([input opts]
-   #?(:bb      (impl/of input opts)
-      :clj     (Source/of ^String input (:user-state opts) (boolean (:line-tracking? opts true)))
-      :default (impl/of input opts))))
+  {:arglists '([input & {:keys [user-state line-tracking? line col]}])}
+  [input & {:as opts}]
+  #?(:bb      (impl/of input opts)
+     :clj     (let [{:keys [user-state line-tracking? line col]
+                     :or {line-tracking? true
+                          line 0
+                          col 0}}
+                    opts]
+                (Source/of input
+                           user-state
+                           (boolean line-tracking?)
+                           (ILineTrackingSource/positionAt line col)))
+     :default (impl/of input opts)))

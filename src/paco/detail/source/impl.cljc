@@ -133,6 +133,14 @@
 
 (defrecord Position [line col])
 
+(defn- make-position
+  ([line col]
+   (Position. line col))
+  ([line col initial-line initial-col]
+   (if (zero? line)
+     (Position. initial-line (unchecked-add-int initial-col col))
+     (Position. (unchecked-add-int initial-line line) col))))
+
 (deftype SourceMark #?(:clj  [mark ^long modcount user-state]
                        :cljs [mark ^number modcount user-state]))
 
@@ -221,11 +229,11 @@
   (position [_]
     (if line-tracker
       (-position line-tracker (index source))
-      (Position. 0 (index source))))
+      (make-position 0 (index source))))
   (position [_ index]
     (if line-tracker
       (-position line-tracker index)
-      (Position. 0 index)))
+      (make-position 0 index)))
   (untracked-skip! [_]
     (let [k (skip! source)]
       (when-not (zero? k)
@@ -240,9 +248,13 @@
 (defn- make-source [source line-tracker user-state]
   (Source. source line-tracker 0 user-state))
 
-(deftype LineTracker #?(:clj [^ArrayList starts
+(deftype LineTracker #?(:clj [^int initial-line
+                              ^int initial-col
+                              ^ArrayList starts
                               ^:unsynchronized-mutable ^int max-index*]
-                        :cljs [^array starts
+                        :cljs [^int initial-line
+                               ^int initial-col
+                               ^array starts
                                ^:mutable ^number max-index*])
   ILineTracker
   (-track! [this index ch] (-track! this index ch nil))
@@ -292,20 +304,24 @@
       (if (< i -1)
         (let [line (-> i unchecked-negate-int unchecked-dec-int)
               k    (unchecked-dec-int line)]
-          (Position. line (unchecked-subtract-int index #?(:clj  (.get starts k)
-                                                           :cljs (aget starts k)))))
+          (make-position line
+                         (unchecked-subtract-int index #?(:clj  (.get starts k)
+                                                          :cljs (aget starts k)))
+                         initial-line
+                         initial-col))
         (if (>= i 0)
-          (Position. (unchecked-inc-int i) 0)
-          (Position. 0 index))))))
+          (make-position (unchecked-inc-int i) 0 initial-line initial-col)
+          (make-position 0 index initial-line initial-col))))))
 
-(defn- line-tracker []
-  (LineTracker. #?(:clj (ArrayList.) :cljs #js []) -1))
+(defn- line-tracker [initial-line initial-col]
+  (LineTracker. initial-line initial-col #?(:clj (ArrayList.) :cljs #js []) -1))
 
 (defn of
-  ([input] (of input nil))
-  ([input {:keys [user-state line-tracking?]
-           :or {line-tracking? true}}]
-   (make-source (string-source input)
-                (when line-tracking?
-                  (line-tracker))
-                user-state)))
+  [input & {:keys [user-state line-tracking? line col]
+            :or {line-tracking? true
+                 line 0
+                 col 0}}]
+  (make-source (string-source input)
+               (when line-tracking?
+                 (line-tracker line col))
+               user-state))

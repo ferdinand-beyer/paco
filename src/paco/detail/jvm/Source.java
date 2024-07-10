@@ -23,9 +23,13 @@ public class Source implements ILineTrackingSource, IUserStateSource {
     }
 
     public static Source of(String input, Object userState, boolean enableLineTracking) {
+        return of(input, userState, enableLineTracking, 0);
+    }
+
+    public static Source of(String input, Object userState, boolean enableLineTracking, long initialPosition) {
         final StringSource source = new StringSource(input);
         if (enableLineTracking) {
-            return new WithLineTracking(source, userState);
+            return new WithLineTracking(source, userState, initialPosition);
         }
         return of(source, userState);
     }
@@ -217,9 +221,9 @@ public class Source implements ILineTrackingSource, IUserStateSource {
 
         private final LineTracker lineTracker;
 
-        WithLineTracking(ISource source, Object userState) {
+        WithLineTracking(ISource source, Object userState, long initialPosition) {
             super(source, userState);
-            this.lineTracker = new LineTracker();
+            this.lineTracker = new LineTracker(initialPosition);
         }
 
         @Override

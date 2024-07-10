@@ -6,17 +6,20 @@ public final class LineTracker {
 
     private static final int INITIAL_CAPACITY = 16;
 
+    private final int initLine;
+    private final int initColumn;
+
     private int[] lineStarts;
     private int allocated;
 
     private int maxIndex;
 
-    // TODO: Take an initial position?
-    // Could be just a long that can be added to our position long.
-    public LineTracker() {
-        lineStarts = new int[INITIAL_CAPACITY];
-        allocated = 0;
-        maxIndex = -1;
+    public LineTracker(long initialPosition) {
+        this.initLine = ILineTrackingSource.lineIndex(initialPosition);
+        this.initColumn = ILineTrackingSource.columnIndex(initialPosition);
+        this.lineStarts = new int[INITIAL_CAPACITY];
+        this.allocated = 0;
+        this.maxIndex = -1;
     }
 
     private void ensureCapacity(int minCapacity) {
@@ -94,8 +97,10 @@ public final class LineTracker {
         return skipped;
     }
 
-    private static long lineColumn(long line, long column) {
-        return (line << Integer.SIZE) | column;
+    private long positionAt(int line, int column) {
+        return (line == 0)
+                ? ILineTrackingSource.positionAt(initLine, initColumn + column)
+                : ILineTrackingSource.positionAt(initLine + line, column);
     }
 
     private long searchPosition(int index) {
@@ -104,24 +109,24 @@ public final class LineTracker {
             // after a known line start
             // i := -(insertion point) - 1
             final int line = -i - 1;
-            return lineColumn(line, index - lineStarts[line - 1]);
+            return positionAt(line, index - lineStarts[line - 1]);
         }
         if (i >= 0) {
             // on a line start
-            return lineColumn(i + 1, 0);
+            return positionAt(i + 1, 0);
         }
         // -1 => before first line start (insertion point: 0)
-        return lineColumn(0, index);
+        return positionAt(0, index);
     }
 
     public long position(int index) {
         if (allocated == 0) {
-            return lineColumn(0, index);
+            return positionAt(0, index);
         }
         // Common case: last tracked position.
         final int lastLineStart = lineStarts[allocated - 1];
         if (index >= lastLineStart) {
-            return lineColumn(allocated, index - lastLineStart);
+            return positionAt(allocated, index - lastLineStart);
         }
         return searchPosition(index);
     }

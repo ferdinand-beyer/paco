@@ -144,8 +144,18 @@
         (is (= 0 (source/pos-col pos))))))
 
   (testing "line tracking disabled"
-    (let [s (source/of "a\nb\nc\n" {:line-tracking? false})]
+    (let [s (source/of "a\nb\nc\n" :line-tracking? false)]
       (source/skip! s 6)
       (let [pos (source/position s)]
         (is (= 0 (source/pos-line pos)))
-        (is (= 6 (source/pos-col pos)))))))
+        (is (= 6 (source/pos-col pos))))))
+
+  (testing "with a custom initial position"
+    (let [s (source/of "a\nb\nc\n" :line 17 :col 42)]
+      (let [pos (source/position s)]
+        (is (= 17 (source/pos-line pos)))
+        (is (= 42 (source/pos-col pos))))
+      (source/skip! s 2)
+      (let [pos (source/position s)]
+        (is (= 18 (source/pos-line pos)))
+        (is (= 0 (source/pos-col pos)))))))
