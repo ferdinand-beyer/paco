@@ -60,6 +60,19 @@
     (is (not (:changed? reply)))
     (is (= #{(error/unexpected-input \1) (error/expected-input \5)} (:messages reply)))))
 
+(deftest peek-char-test
+  (let [reply (helper/run (c/peek-char \a) "abc")]
+    (is (:ok? reply))
+    (is (not (:changed? reply)))
+    (is (= \a (:value reply)))
+    (is (nil? (:error reply))))
+
+  (let [reply (helper/run (c/peek-char \a) "bc")]
+    (is (:fail? reply))
+    (is (not (:changed? reply)))
+    (is (= #{(error/expected-input \a) (error/unexpected-input \b)}
+           (error/message-set (:error reply))))))
+
 (deftest any-of-test
   (is (= \z (p/parse (c/any-of "xyz") "zebra")))
   (let [reply (helper/run (c/any-of "xyz") "lion")]

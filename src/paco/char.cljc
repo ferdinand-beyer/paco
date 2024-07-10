@@ -69,6 +69,19 @@
   ;; ? This is slower than `char` -- optimise?
   (char-return ch nil))
 
+(defn peek-char
+  "Returns a parser that succeeds if the character `ch` comes next, without
+   changing parser state."
+  [ch]
+  (let [expected (error/expected-input ch)]
+    (fn [source reply]
+      (let [next-ch (source/peek source)]
+        (if (= ch next-ch)
+          (reply/ok reply ch)
+          (reply/fail reply (error/merge expected (if (nil? next-ch)
+                                                    error/unexpected-end
+                                                    (error/unexpected-input next-ch)))))))))
+
 (def any-char p/any-token)
 (def skip-any-char p/skip-any-token)
 

@@ -541,16 +541,16 @@
   "Returns a parser that first applies `p`.  If `p` succeeds,
    applies `pthen`.  Otherwise, when `p` fails without changing the parser
    state, applies `pelse`."
-  [p pthen pelse]
-  (alt (then p pthen) pelse))
+  ([p pthen] (then p pthen))
+  ([p pthen pelse] (alt (then p pthen) pelse)))
 
 (defn cond-bind
   "Returns a parser that first applies `p`.  If `p` succeeds,
    applies the parser returned by calling `f` with the result of `p`.
    Otherwise, when `p` fails without changing the parser state, applies
    `pelse`."
-  [p then-fn pelse]
-  (alt (bind p then-fn) pelse))
+  ([p then-fn] (bind p then-fn))
+  ([p then-fn pelse] (alt (bind p then-fn) pelse)))
 
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
