@@ -1,4 +1,4 @@
-(ns paco.detail.source.impl
+(ns ^:no-doc paco.detail.source.impl
   "Pure Clojure(Script) source implementation."
   (:refer-clojure :exclude [peek])
   #?(:clj  (:import [java.util ArrayList Collections]

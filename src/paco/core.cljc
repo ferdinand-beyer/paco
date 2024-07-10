@@ -140,18 +140,18 @@
 
 (defmacro let-parser
   "Similar to `let`, but for parsers.  The expressions in `bindings` must
-   evaluate to parsers.  The `with` parser sequentially applies these parsers
+   evaluate to parsers.  The returned parser sequentially applies these parsers
    to the input, and binds their result values to their binding forms.  Every
    expression can use the preceding bindings.
 
-   Finally evaluates `body` with all bindings, which must yield a parser that
+   Finally, it evaluates `body` with all bindings, which must yield a parser that
    is then applied to the input.
 
    Expands to a chain of `bind` calls.
 
    Use this to create parsers dynamically depending on the return value of a
    previously succeeded parser.  If you don't need this functionality, consider
-   using `map` instead."
+   using `let-return` instead."
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
   [bindings & body]
