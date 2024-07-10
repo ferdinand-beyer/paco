@@ -205,7 +205,8 @@
 
    The parser `(let-return [x p] (f x))` is an optimised version of
    `(let-parser [x p] (return (f x)))`."
-  {:clj-kondo/lint-as 'clojure.core/let}
+  {:clj-kondo/lint-as 'clojure.core/let
+   :style/indent 1}
   [bindings & body]
   (emit-let-return bindings body))
 

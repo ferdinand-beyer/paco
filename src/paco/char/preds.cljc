@@ -103,12 +103,17 @@
    newline or carriage return."
   (among " \t\n\r"))
 
+(def ^:private additional-unicode-space?
+  "Characters considered whitespace by the JVM and .NET."
+  (among "\t\n\u000b\f\r"))
+
 (def unicode-space?
   "Returns true if `ch` is a Unicode space character (any space separator,
    line separator, or paragraph separator)."
-  #?(:bb   #(Character/isSpaceChar (.charValue ^Character %))
-     :clj  ICharPredicate/SPACE
-     :cljs #(.test #"(?u)^\s$" %)))
+  #?(:bb   (or #(Character/isSpaceChar (.charValue ^Character %))
+               additional-unicode-space?)
+     :clj  (or ICharPredicate/SPACE additional-unicode-space?)
+     :cljs (or #(.test #"(?u)^\s$" %) additional-unicode-space?)))
 
 ;; https://unicode.org/reports/tr18/#General_Category_Property
 

@@ -14,6 +14,14 @@
   (are [ch] (preds/test preds/ascii-letter? ch) \a \b \m \y \z \A \B \M \Y \Z)
   (are [ch] (not (preds/test preds/ascii-letter? ch)) \0 \? \u0000))
 
+(deftest space?-test
+  (are [ch] (preds/test preds/space? ch) \space \tab \return \newline)
+  (are [ch] (not (preds/test preds/space? ch)) \0 \? \u0000 \a \A))
+
+(deftest unicode-space?-test
+  (are [ch] (preds/test preds/unicode-space? ch) \space \tab \return \newline \u00a0 \u2000 \u2028 \u2029)
+  (are [ch] (not (preds/test preds/unicode-space? ch)) \0 \? \u0000 \a \A))
+
 (deftest upper?-test
   (are [ch] (preds/test preds/upper? ch) \A \Æ)
   (are [ch] (not (preds/test preds/upper? ch)) \a \æ \ß \0 \? \u0000))
