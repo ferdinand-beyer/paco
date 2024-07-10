@@ -425,6 +425,11 @@
                                        (p/cat helper/any helper/any))
                                 "abcd"))))
 
+(deftest group-test
+  (is (= [\a] (p/parse (p/group helper/any) "abc")))
+  (is (= [\a] (p/parse (p/group (p/cat helper/any)) "abc")))
+  (is (= [\a \b] (p/parse (p/group helper/any helper/any) "abc"))))
+
 (deftest ?-test
   (let [reply (helper/run (p/? helper/any) "x")]
     (is (:ok? reply))
@@ -648,7 +653,11 @@
 
     (let [reply (helper/run p "xxxxxxxxyzzzzzzzzz")]
       (is (:ok? reply))
-      (is (= [\y] (:value reply))))))
+      (is (= [\y] (:value reply)))))
+
+  (let [p (p/cat (p/token \f) (p/group (p/repeat (p/token \o) 2))
+                 (p/group (p/token \b) (p/token \a) (p/token \r)))]
+    (is (= [\f [\o \o] [\b \a \r]] (p/parse p "foobar")))))
 
 (deftest sep-by-test
   (is (empty? (p/parse (p/*sep-by helper/any (p/token \,)) "")))

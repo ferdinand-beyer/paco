@@ -572,6 +572,13 @@
   [ps]
   (advanced/sequence rfs/seqex ps))
 
+(defn group
+  "Like `cat`, but returns a collection that will not be flattened into
+   surrounding sequence expressions."
+  ([p] (map p rfs/unseqex))
+  ([p1 p2 & ps]
+   (advanced/sequence rfs/seqex-group (list* p1 p2 ps))))
+
 (defn ?
   "Returns a parser that parses an optional occurrence of `p`.
 

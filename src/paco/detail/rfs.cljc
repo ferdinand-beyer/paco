@@ -49,6 +49,17 @@
        (reduce conj! xs x)
        (conj! xs x)))))
 
+(def seqex-group
+  "Like `seqex`, but the completed result will not be flattened into
+   surrounding seqex collections."
+  (completing seqex persistent!))
+
+(defn unseqex [x]
+  (if (coll? x)
+    (vary-meta x dissoc seqex-tag)
+    (when (some? x)
+      (list x))))
+
 (defn string
   "Reducing function that builds a string."
   ([] #?(:clj  (StringBuilder.)
