@@ -91,18 +91,14 @@
       (is (nil? (source/re-match s #"foo")))
       (is (nil? (source/re-match s #"x")))
       (is (some? (source/re-match s #"ex")))
-      (is (some? (source/re-match s #"^ex")))
-      (is (= "ex" (source/re-groups s #"ex")))
-      (is (= ["exa" "a"] (source/re-groups s #"ex(a)")))))
+      (is (some? (source/re-match s #"^ex")))))
 
   (testing "after skipping"
     (let [s (source/of "example")]
       (source/skip! s 4)
       (is (nil? (source/re-match s #"ex")))
       (is (some? (source/re-match s #"p")))
-      (is (nil? (source/re-match s #"^p")))
-      (is (= "ple" (source/re-groups s #"ple")))
-      (is (= ["ple" "p" "l"] (source/re-groups s #"(p)(.)e")))))
+      (is (nil? (source/re-match s #"^p")))))
 
   (testing "at the end of input"
     (let [s (source/of "example")]

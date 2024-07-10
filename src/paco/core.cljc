@@ -1,11 +1,11 @@
 (ns paco.core
-  (:refer-clojure :exclude [* + cat deref map max min not-empty ref repeat sequence])
-  (:require [paco.detail.error :as error]
-            [paco.detail.parsers :as dp]
+  (:refer-clojure :exclude [* + cat cond deref force map max min not not-empty peek ref repeat sequence])
+  (:require [paco.detail.advanced :as advanced]
+            [paco.detail.error :as error]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
             [paco.detail.source :as source])
-  #?(:cljs (:require-macros [paco.core :refer [fwd]])))
+  #?(:cljs (:require-macros [paco.core :refer [fwd let-return]])))
 
 (defn- result-data [source reply]
   {:ok?        (reply/ok? reply)
@@ -41,8 +41,14 @@
 ;;---------------------------------------------------------
 ;; Basic parsers
 
-;; fparsec: preturn, >>%
 (defn return
+  "With one arg, returns a parser that consumes nothing and returns `x`.
+
+   With two args, returns a parser that behaves like `p`, but returns `x`
+   when `p` succeeds.
+
+   Similar to:
+   - fparsec: `preturn`, `>>%`"
   ([x]
    (fn [_source reply]
      (reply/ok reply x)))
@@ -50,32 +56,45 @@
    (fn [source reply]
      (reply/with-value (p source reply) x))))
 
-;; fparsec: pzero, but fails
-;; alternate names: null, empty, eps(ilon)
-(def pnil
-  "This parser always succeeds and returns `nil`."
+(def eps
+  "The eps(ilon) parser accepts the empty word (i.e. it always succeeds) and
+   returns `nil`.
+
+   Similar to:
+   - fparsec: `pzero` (but succeeds)"
   (return nil))
 
 (defn end
-  "This parser succeeds a the end of the input stream."
+  "The `end` parser only succeeds a the end of the input stream and
+   returns `nil`.
+
+   Similar to:
+   - parsec, fparsec: `eof`"
   [source reply]
   (if (source/end? source)
     (reply/ok reply nil)
     (reply/fail reply error/expected-end)))
 
-(defn any-token [source reply]
+(defn any-token
+  "This parser accepts and returns any token from the input stream."
+  [source reply]
   (if-some [token (source/peek source)]
     (do
       (source/skip! source)
       (reply/ok reply token))
     (reply/fail reply (error/unexpected-token-or-end source))))
 
-(defn skip-any-token [source reply]
+(defn skip-any-token
+  "This parser skips the next token from the input stream and returns `nil`."
+  [source reply]
   (if (pos? (source/skip! source))
     (reply/ok reply nil)
     (reply/fail reply (error/unexpected-token-or-end source))))
 
-(defn token-return [token value]
+(defn token-return
+  "Returns a parser that expects `token` to come next in the input stream
+   and returns `value`."
+  [token value]
   (let [expected (error/expected-input token)]
     (fn [source reply]
       (if (= token (source/peek source))
@@ -84,13 +103,22 @@
           (reply/ok reply value))
         (reply/fail reply (error/merge expected (error/unexpected-token-or-end source)))))))
 
-(defn token [token]
+(defn token
+  "Returns a parser that accepts and returns `token`."
+  [token]
   (token-return token token))
 
 ;;---------------------------------------------------------
 ;; Chaining and piping
 
-(defn bind [p f]
+(defn bind
+  "Returns a parser that first applies the parser `p` to the input, then
+   calls the function `f` with the result value of `p` and finally applies
+   the parser returned by `f` to the input.
+
+   Similar to:
+   - `>>=` (parsec, fparsec)"
+  [p f]
   (fn [source reply]
     (let [reply (p source reply)]
       (if (reply/ok? reply)
@@ -104,49 +132,118 @@
             (p2 source reply)))
         reply))))
 
-(defn- emit-with [bindings body]
+(defn- emit-let-parser [bindings body]
   (let [[binding p] (take 2 bindings)]
     (if (= 2 (count bindings))
       `(bind ~p (fn [~binding] ~@body))
-      `(bind ~p (fn [~binding] ~(emit-with (drop 2 bindings) body))))))
+      `(bind ~p (fn [~binding] ~(emit-let-parser (drop 2 bindings) body))))))
 
-;; ? rename to `let`?
-;; alternative names: let-bind,  plet
-;; let-bind: connect with bind and return a parser
-;; let-return: use dp/with-seq and return a value
-(defmacro with
+(defmacro let-parser
+  "Similar to `let`, but for parsers.  The expressions in `bindings` must
+   evaluate to parsers.  The `with` parser sequentially applies these parsers
+   to the input, and binds their result values to their binding forms.  Every
+   expression can use the preceding bindings.
+
+   Finally evaluates `body` with all bindings, which must yield a parser that
+   is then applied to the input.
+
+   Expands to a chain of `bind` calls.
+
+   Use this to create parsers dynamically depending on the return value of a
+   previously succeeded parser.  If you don't need this functionality, consider
+   using `map` instead."
   {:clj-kondo/lint-as 'clojure.core/let
    :style/indent 1}
   [bindings & body]
   {:pre [(vector? bindings)
          (even? (count bindings))
          (some? body)]}
-  (emit-with bindings body))
+  (emit-let-parser bindings body))
 
-;; fparsec: |>>, pipe2, pipe3, pipe4, pipe5
-;; alternative names: map, fmap, pmap
+(defn- emit-let-return [bindings body]
+  {:pre [(vector? bindings)
+         (seq bindings)
+         (even? (count bindings))]}
+  (let [source (gensym "source__")
+        reply  (gensym "reply__")
+        emit   (fn emit [[binding-form parser & more-bindings] modcount-before error-before]
+                 `(let [~reply (~parser ~source ~reply)]
+                    (if (reply/ok? ~reply)
+                      (let [~binding-form (reply/value ~reply)]
+                        ~(if (seq more-bindings)
+                           ;; recur to next parsers
+                           (let [modcount (gensym "modcount__")
+                                 error    (gensym "error__")]
+                             `(let [~modcount (source/modcount ~source)
+                                    ~error    (reply/error ~reply)]
+                                ~(emit more-bindings
+                                       modcount
+                                       (if error-before
+                                         `(if (= ~modcount-before ~modcount)
+                                            (error/merge ~error-before ~error)
+                                            ~error)
+                                         error))))
+                           ;; this was the last parser
+                           (if error-before
+                             `(let [value# (do ~@body)]
+                                (if (= ~modcount-before (source/modcount ~source))
+                                  (reply/ok ~reply value# (error/merge ~error-before (reply/error ~reply)))
+                                  (reply/with-value ~reply value#)))
+                             `(reply/with-value ~reply (do ~@body)))))
+                      ;; parser failed
+                      ~(if error-before
+                         `(let [error# (reply/error ~reply)]
+                            (if (= ~modcount-before (source/modcount ~source))
+                              (reply/with-error ~reply (error/merge ~error-before error#))
+                              ~reply))
+                         reply))))]
+    (list `fn [source reply] (emit bindings nil nil))))
+
+(defmacro let-return
+  "Like `let-parser`, but evaluates `body` as the resulting parser's result
+   value, instead of expecting a final parser to apply.
+
+   The parser `(let-return [x p] (f x))` is an optimised version of
+   `(let-parser [x p] (return (f x)))`."
+  {:clj-kondo/lint-as 'clojure.core/let}
+  [bindings & body]
+  (emit-let-return bindings body))
+
 (defn map
-  "Returns a parser that applies the provided parsers in sequence and returns
-   the return value of calling `f` with the return values."
+  "Returns a parser that applies the parser `p` and returns the return value
+   of calling `f` with the result value of `p`.
+
+   When multiple parsers are given, applies them in sequence and calls `f` with
+   all result values.  The arity of `f` must match the number of supplied
+   parsers.
+
+   Similar to:
+   - parsec : `fmap`
+   - fparsec: `|>>`, `pipe2`, `pipe3`, `pipe4`, `pipe5`"
   ([p f]
-   (dp/with-seq [x p] (f x)))
+   (let-return [x p] (f x)))
   ([p1 p2 f]
-   (dp/with-seq [x p1, y p2] (f x y)))
+   (let-return [x p1, y p2] (f x y)))
   ([p1 p2 p3 f]
-   (dp/with-seq [x p1, y p2, z p3] (f x y z)))
+   (let-return [x p1, y p2, z p3] (f x y z)))
   ([p1 p2 p3 p4 & more]
    (let [ps (list* p1 p2 p3 p4 (butlast more))
          f  (last more)]
-     (dp/sequence (completing conj #(apply f %)) ps))))
+     (advanced/sequence (completing conj #(apply f %)) ps))))
 
-(defn tuple*
-  "Applies the parsers `ps` in sequence and returns a vector of
-   their return values."
+(defn tuples
+  "Returns a parser that applies the parsers `ps` in sequence and returns a
+   vector of their return values."
   [ps]
-  (dp/sequence rfs/vector ps))
+  (advanced/sequence rfs/vector ps))
 
-;; fparsec: .>>., tuple2, tuple3, tuple4, tuple5
 (defn tuple
+  "Returns a parser that applies the parsers in sequence and returns a
+   vector of their return values.
+
+   Similar to:
+   - parsec: `<*>`
+   - fparsec: `.>>.`, `tuple2`, `tuple3`, `tuple4`, `tuple5`"
   ([p]
    (map p vector))
   ([p1 p2]
@@ -154,51 +251,63 @@
   ([p1 p2 p3]
    (map p1 p2 p3 vector))
   ([p1 p2 p3 p4 & more]
-   (tuple* (list* p1 p2 p3 p4 more))))
+   (tuples (list* p1 p2 p3 p4 more))))
 
-;; fparsec: >>.
-;; parsesso: after
 (defn then
-  "Applies the parsers in sequence and returns the result of the last one."
+  "Returns a parser that applies the parsers `ps` in sequence and returns the
+   result of the last one.
+
+   Similar to:
+   - parsec: `>>`
+   - fparsec: `>>.`"
   ([p] p)
   ([p1 p2]
-   (dp/with-seq [_ p1, x p2] x))
+   (let-return [_ p1, x p2] x))
   ([p1 p2 p3]
-   (dp/with-seq [_ p1, _ p2, x p3] x))
+   (let-return [_ p1, _ p2, x p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/sequence rfs/last (list* p1 p2 p3 p4 more))))
+   (advanced/sequence rfs/last (list* p1 p2 p3 p4 more))))
 
-;; fparsec: .>>
 (defn then-skip
-  "Applies the parsers in sequence and returns the result of the first one."
+  "Returns a parser that applies the parsers `ps` in sequence and
+   returns the result of the first one.
+
+   Similar to:
+   - fparsec: `.>>`"
   ([p] p)
   ([p1 p2]
-   (dp/with-seq [x p1, _ p2] x))
+   (let-return [x p1, _ p2] x))
   ([p1 p2 p3]
-   (dp/with-seq [x p1, _ p2, _ p3] x))
+   (let-return [x p1, _ p2, _ p3] x))
   ([p1 p2 p3 p4 & more]
-   (dp/sequence rfs/first (list* p1 p2 p3 p4 more))))
-
-;; fparsetc: .>>.: like (cat p1 p2)
+   (advanced/sequence rfs/first (list* p1 p2 p3 p4 more))))
 
 (defn between
-  ([p psurround]
-   (between p psurround psurround))
+  "Returns a parser that applies the parsers `popen`, `p` and `pclose` in sequence
+   and returns the result of `p`.
+
+   When called with two args, uses `pdelim` for both `popen` and `pclose`."
+  ([p pdelim]
+   (between p pdelim pdelim))
   ([p popen pclose]
-   (dp/with-seq [_ popen, x p, _ pclose] x)))
+   (let-return [_ popen, x p, _ pclose] x)))
 
 ;;---------------------------------------------------------
 ;; Customizing and recovering from errors
 
-(defn fail [message]
+(defn fail
+  "Returns a parser that always fails with given error message."
+  [message]
   (let [error (error/message message)]
     (fn [_source reply]
       (reply/fail reply error))))
 
-;; fparsec: <?>
 (defn label
-  "If `p` does not change the parser state, the errors are
-   replaced with `(expected label)."
+  "Returns a parser that behaves like `p`, but replaces errors with
+   `(expected label)` when `p` not change the parser state.
+
+   Similar to:
+   - fparsec: `<?>"
   [p label]
   (let [expected-error (error/expected label)]
     (fn [source reply]
@@ -208,8 +317,13 @@
           (reply/with-error reply expected-error)
           reply)))))
 
-;; fparsec: <??>
 (defn label-compound
+  "Returns a parser that behaves like `(label p)`, but generates
+   a \"compund error\" message with both the given string label and the
+   error messages generated by p.
+
+   Similar to:
+   - fparsec: `<??>"
   [p label]
   (let [expected-error (error/expected label)]
     (fn [source reply]
@@ -234,12 +348,14 @@
 ;; fparsec: >>=?, >>? (should be >>.?), .>>.?
 ;; These backtrack to the beginning if the second parser fails
 ;; "with a non‐fatal error and without changing the parser state"
-;; alternate names: try, ptry, recover, !, atomic, unit
 ;; TODO: Add an arity (atomic p label) for (atomic (label-compound p label))
 (defn atomic
-  "Returns a parser that behaves like `p`, except that it backtracks to
-   the original parser state when `p` fails with changing the parser
-   state."
+  "Returns a parser that behaves like `p`, but is atomic: When `p` fails
+   after changing the parser state, backtracks to undo the change.
+
+   Similar to:
+   - parsec: `try`
+   - fparsec: `attempt`"
   [p]
   (fn [source reply]
     (source/with-resource [mark (source/mark source)]
@@ -251,8 +367,9 @@
             (reply/fail reply error)))))))
 
 (defn ?atomic
-  "Returns a parser that applies `p` and if `p` fails, backtracks to the
-   original state and _succeeds_ with value `not-found` (default: `nil`).
+  "Returns a parser that applies the _optional_ parser `p`. If `p` fails,
+   backtracks to the original state and _succeeds_ with value `not-found`
+   (default: `nil`).
 
    `(?atomic p)` is an optimized implementation of `(? (atomic p))`."
   ([p] (?atomic p nil))
@@ -288,7 +405,6 @@
 ;;---------------------------------------------------------
 ;; Parsing alternatives
 
-;; ? Move to detail.parsers?
 (defn- alt2
   ([p1 p2]
    (alt2 p1 p2 true))
@@ -305,8 +421,12 @@
              (reply/with-error reply (error/merge error (reply/error reply)))
              reply)))))))
 
-;; fparsec: <|>
 (defn alt
+  "Returns a parser that applies the parsers until the first one succeeds
+   or fails after changing the parser state.
+
+   Similar to:
+   - parsec, fparsec: `<|>`, `choice`"
   ([p1] p1)
   ([p1 p2]
    (alt2 p1 p2))
@@ -315,25 +435,29 @@
   ([p1 p2 p3 & more]
    (reduce alt2 p1 (list* p2 p3 more))))
 
-;; fparsec: choice, choiceL
-;; "choiceL is slightly faster than choice, because it doesn’t
-;; have to aggregate error messages."
 (defn alts
+  "Like `alt`, but takes a sequence of parsers.
+
+   Providing a `label` is slightly faster, because the parser doesn't
+   have to aggregate error messages.
+
+   - `choice`, `choiceL` (parsec, fparsec)"
   ([ps]
    (if-let [p (first ps)]
      (reduce alt2 p (next ps))
-     pnil))
+     eps))
   ([ps label']
    (if-let [p (first ps)]
      (label (reduce #(alt2 %1 %2 false) p (next ps)) label')
-     pnil)))
+     eps)))
 
 ;;---------------------------------------------------------
 ;; Conditional parsing and looking ahead
 
 ;; ? Pass `label`?
 (defn not-empty
-  "Like `p`, but fails when `p` does not change the parser state."
+  "Returns a parser that behaves like `p`, but fails when `p` does not
+   change the parser state."
   [p]
   (fn [source reply]
     (let [modcount (source/modcount source)
@@ -343,10 +467,17 @@
         reply))))
 
 ;; fparsec: followedBy, followedByL
-;; alternative names: peek, follows, assert-next
+;; alternative names: ?= (regex positive look-ahead)
 (defn followed-by
-  "Returns a parser that succeeds if it is followed by `p`, e.g. if `p`
-   succeeds next.  Does not change the parser state."
+  "EXPERIMENTAL: The difference between `followed-by` and `peek` (`lookAhead`)
+   is subtle: fparsec's `followedBy` is an assertion and returns nothing, while
+   `lookAhead` returns the wrapped parser's result.  Do we need both?
+
+   Returns a parser that succeeds if `p` succeeds, but does not change
+   the parser state.  Returns `nil`.
+
+   Similar to:
+   - fparsec: `followedBy`, `followedByL`"
   ([p]
    (followed-by p nil))
   ([p label]
@@ -362,13 +493,16 @@
              (reply/ok reply nil)
              (reply/fail reply expected-error))))))))
 
-;; fparsec: notFollowedBy, notFollowedByL
-;; alternative names: assert-not-next, not, ?! (regex negative lookahead)
-(defn not-followed-by
+;; alternative names: ?! (regex negative lookahead)
+(defn not
   "Returns a parser that succeeds if the parser `p` fails, and fails otherwise.
-   In both cases, it does not change the parser state."
+   In both cases, it does not change the parser state.  Returns `nil`.
+
+   Similar to:
+   - parsec: `notFollowedBy`
+   - fparsec: `notFollowedBy`, `notFollowedByL`"
   ([p]
-   (not-followed-by p nil))
+   (not p nil))
   ([p label]
    (let [expected-error (some-> label error/unexpected)]
      (fn [source reply]
@@ -381,12 +515,11 @@
              (reply/fail reply expected-error)
              (reply/ok reply nil))))))))
 
-;; fparsec: lookAhead
-;; alternate names: peek; ?= (regex positive look-ahead)
-;; TODO: The difference to `followed-by` is subtle. Do we need both?
-;; fparsec's followedBy returns `unit` (nil), while `lookAhead` returns the
-;; parser's value. followedBy/notFollowedBy are pure assertions/predicates
-(defn look-ahead
+(defn peek
+  "Returns a parser that behaves like `p`, but always restores the parser
+   state.
+
+   - `lookAhead` (parsec, fparsec)"
   [p]
   (fn [source reply]
     (source/with-resource [mark (source/mark source)]
@@ -404,105 +537,223 @@
               (source/backtrack! source mark)
               (reply/fail reply error))))))))
 
+(defn cond
+  "Returns a parser that first applies `p`.  If `p` succeeds,
+   applies `pthen`.  Otherwise, when `p` fails without changing the parser
+   state, applies `pelse`."
+  [p pthen pelse]
+  (alt (then p pthen) pelse))
+
+(defn cond-bind
+  "Returns a parser that first applies `p`.  If `p` succeeds,
+   applies the parser returned by calling `f` with the result of `p`.
+   Otherwise, when `p` fails without changing the parser state, applies
+   `pelse`."
+  [p then-fn pelse]
+  (alt (bind p then-fn) pelse))
+
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
 
-;;? Add a fn to treat a sequex as one unit to prevent flattening?
+;;? Add a fn to treat a seqex as one unit to prevent flattening?
 
-(defn cat* [ps]
-  (dp/sequence rfs/seqex ps))
+(defn cat
+  "Returns a parser that applies the given parsers in sequence,
+   and returns a collection of their result values (concatenation).
 
-(defn cat [& ps]
-  (dp/sequence rfs/seqex ps))
+   This is a 'sequence expression' parser: the result of nested sequence
+   expressions are flattened in this parser's return value.
+   `(cat p1 (cat p2 p3))` is logically equivalent to `(cat p1 p2 p3)`."
+  [& ps]
+  (advanced/sequence rfs/seqex ps))
 
-;; alternative names: opt
+(defn cats
+  "Like `cat`, but takes a sequence of parsers."
+  [ps]
+  (advanced/sequence rfs/seqex ps))
+
 (defn ?
-  "Optional: zero or one."
+  "Returns a parser that parses an optional occurrence of `p`.
+
+   When `p` fails without changing parser state, `(? p)` succeeds with `nil`.
+   When `p` fails after changing parser state, so will `(? p)`.
+
+   This is a 'sequence expression' parser, see `cat`.
+
+   Similar to:
+   - parsec, fparsec: `option`, `optional`"
   ([p]
-   (alt2 p pnil))
+   (alt2 p eps))
   ([p not-found]
    (alt2 p (return not-found))))
 
 (defn *
-  "Zero or more."
+  "Returns a parser that parses zero or more occurrances of `p`, and returns
+   a collection of the return values.
+
+   This is a 'sequence expression' parser, see `cat`.
+
+   Similar to:
+   - parsec, fparsec: `many`"
   [p]
-  (dp/repeat-many `* p rfs/seqex))
+  (advanced/repeat-many `* p rfs/seqex))
 
 (defn +
-  "One or more."
+  "Returns a parser that parses one or more occurrances of `p`, and returns
+   a collection of the return values.
+
+   This is a 'sequence expression' parser, see `cat`.
+
+   Similar to:
+   - parsec, fparsec: `many1`"
   [p]
-  (dp/repeat-min `+ p rfs/seqex 1))
+  (advanced/repeat-min `+ p rfs/seqex 1))
 
-;; fparsec: skipMany
-(defn *skip [p]
-  (dp/repeat-many `*skip p rfs/ignore))
+(defn *skip
+  "Like `*`, but discards `p`'s results and returns `nil`.
 
-;; fparsec: skipMany1
-(defn +skip [p]
-  (dp/repeat-min `+skip p rfs/ignore 1))
+   Simillar to:
+   - fparsec: `skipMany`"
+  [p]
+  (advanced/repeat-many `*skip p rfs/ignore))
 
-;; fparsec: parray, +skipArray
+(defn +skip
+  "Like `+`, but discards `p`'s results and returns `nil`.
+
+   Simillar to:
+   - fparsec: `skipMany1`"
+  [p]
+  (advanced/repeat-min `+skip p rfs/ignore 1))
+
 (defn repeat
+  "When called with two args, returns a parser that applies `p` `n` times.
+
+   When called with three args, returns a parser that applies `p` at least
+   `min` times and at most `max` times (until it fails).
+
+   This is a 'sequence expression' parser, see `cat`.
+
+   Similar to:
+   - fparsec: `parray`"
   ([p n]
-   (dp/repeat-times `repeat p rfs/seqex n))
+   (advanced/repeat-times `repeat p rfs/seqex n))
   ([p min max]
-   (dp/repeat-min-max `repeat p rfs/seqex min max)))
+   (advanced/repeat-min-max `repeat p rfs/seqex min max)))
 
-(defn min [p n]
-  (dp/repeat-min `min p rfs/seqex n))
+;; fparsec: skipArray
 
-(defn max [p n]
-  (dp/repeat-max `max p rfs/seqex n))
+(defn min
+  "Returns a parser that applies `p` `n` or more times, and returns a
+   collection of the result values.
+
+   This is a 'sequence expression' parser, see `cat`."
+  [p n]
+  (advanced/repeat-min `min p rfs/seqex n))
+
+(defn max
+  "Returns a parser that applies `p` at most `n` times, and returns a
+   collection of the result values.
+
+   This is a 'sequence expression' parser, see `cat`."
+  [p n]
+  (advanced/repeat-max `max p rfs/seqex n))
 
 (defn *sep-by
+  "Returns a parser that parses `p` zero or more times, separated by
+   the parser `psep`.  Returns a collection of the return values of `p`.
+   The return value of `psep` is discarded.
+
+   When `sep-may-end?` is true, allows the sequence to end with `psep`.
+   Otherwise, expects `p` to succeed after every `psep`.
+
+   This is a 'sequence expression' parser, see `cat`.
+
+   Similar to:
+   - parsec, fparsec: `sepBy`, `sepEndBy`"
   ([p psep] (*sep-by p psep nil))
-  ([p psep end?]
-   (dp/sep-by `*sep-by p psep rfs/seqex true end?)))
+  ([p psep sep-may-end?]
+   (advanced/sep-by `*sep-by p psep rfs/seqex true sep-may-end?)))
 
 (defn +sep-by
+  "Like `*sep-by`, but requires `p` to suceed at least once.
+
+   Similar to:
+   - parsec, fparsec: `sepBy1`, `sepEndBy1`"
   ([p psep] (+sep-by p psep nil))
-  ([p psep end?]
-   (dp/sep-by `+sep-by p psep rfs/seqex false end?)))
+  ([p psep sep-may-end?]
+   (advanced/sep-by `+sep-by p psep rfs/seqex false sep-may-end?)))
 
 (defn *skip-sep-by
+  "Like `*sep-by`, but discards all results and returns `nil`.
+
+   Similar to:
+   - fparsec: `skipSepBy`, `skipSepEndBy`"
   ([p psep] (*skip-sep-by p psep nil))
   ([p psep end?]
-   (dp/sep-by `*skip-sep-by p psep rfs/ignore true end?)))
+   (advanced/sep-by `*skip-sep-by p psep rfs/ignore true end?)))
 
 (defn +skip-sep-by
+  "Like `+sep-by`, but discards all results and returns `nil`.
+
+   Similar to:
+   - fparsec: `skipSepBy1`, `skipSepEndBy1`"
   ([p psep] (+skip-sep-by p psep nil))
   ([p psep end?]
-   (dp/sep-by `+skip-sep-by p psep rfs/ignore false end?)))
+   (advanced/sep-by `+skip-sep-by p psep rfs/ignore false end?)))
 
-;; fparsec: manyTill
 (defn *until
+  "Returns a parser that repeatedly applies the parser `p` for as long
+   as `pend` fails (without changing the parser state).  It returns a collection
+   of the results returned by `p`.
+
+   When `include-end?` is true, also includes the result of `pend` in the
+   returned collection.
+
+   Similar to:
+   - parsec, fparsec: `manyTill`"
   ([p pend] (*until p pend nil))
   ([p pend include-end?]
-   (dp/until `*until p pend rfs/seqex true include-end?)))
+   (advanced/until `*until p pend rfs/seqex true include-end?)))
 
 (defn +until
+  "Like `*until`, but requires `p` to succeed at least once.
+
+   Similar to:
+   - fparsec: `many1Till`"
   ([p pend] (+until p pend nil))
   ([p pend include-end?]
-   (dp/until `+until p pend rfs/seqex false include-end?)))
+   (advanced/until `+until p pend rfs/seqex false include-end?)))
 
-(defn *skip-until [p pend]
-  (dp/until `*skip-until p pend rfs/ignore true false))
+(defn *skip-until
+  "Like `*until`, but discards all results and returns `nil`.
 
-(defn +skip-until [p pend]
-  (dp/until `+skip-until p pend rfs/ignore false false))
+   Similar to:
+   - fparsec: `skipManyTill`"
+  [p pend]
+  (advanced/until `*skip-until p pend rfs/ignore true false))
+
+(defn +skip-until
+  "Like `+until`, but discards all results and returns `nil`.
+
+   Similar to:
+   - fparsec: `skipMany1Till`"
+  [p pend]
+  (advanced/until `+skip-until p pend rfs/ignore false false))
 
 ;; fparsec: chainl, chainr, + variants
 
 ;;---------------------------------------------------------
-;; Forwarding / lazy / recursive
+;; Forwarding / lazy / recursive parsers
 
 (defmacro fwd
-  "Returns a parser that forwards to `expr`.  Useful for recursive parsers
-   to use a parser that has been declared but not yet defined:
+  "Returns a parser that applies the parser obtained by evaluating `expr`,
+   delaying evaluation until it is needed.
+
+   Useful for recursive parsers, to use a parser that has been declared but not
+   yet defined, usually in a var:
 
    ```clojure
-   (def expr (p/alt c/digit
-                    (p/between (p/fwd expr) (c/char \\() (c/char \\)))))
+   (def expr (alt digit (between (fwd expr) (char \\() (char \\)))))
    ```
 
    **Warning**: Left-recursive parsers are not supported and will lead to
@@ -512,19 +763,23 @@
      (let [p# ~expr]
        (p# source# reply#))))
 
-(defn pforce
-  "Returns a parser that forwards to `(force d)`."
+(defn force
+  "Returns a parser that realizes and applies a delayed parser on demand."
   [d]
   (fwd (clojure.core/force d)))
 
-;; alternate name: pdelay, delay, defer
-(defmacro lazy [& body]
-  `(pforce (clojure.core/delay ~@body)))
+(defmacro lazy
+  "Returns a parser that evaluates `body` the first time it is needed,
+   and caches the resulting parser."
+  [& body]
+  `(force (delay ~@body)))
 
-;; fparsec: createParserForwardedToRef
 (defn deref
-  "Returns a parser that forwards all calls to the parser returned
-   by `@ref`.  Useful to construct recursive parsers."
+  "Returns a parser that de-references `ref` on demand, allowing for
+   recursive or mutable parsers.
+
+   Similar to:
+   - fparsec: `createParserForwardedToRef`"
   [ref]
   (fwd @ref))
 
@@ -532,10 +787,14 @@
   "Creates a recursive parser.  Calls `f` with one arg, a parser to recur,
    and returns the parser returned by `f`.
 
-   It is assumed that `f` uses `p/alt` or similar to eventually stop the
-   recursion."
+   It is assumed that `f` uses `alt` or similar to eventually stop the
+   recursion.  For example:
+
+   ```clojure
+   (def parens (rec #(? (between % (char \\() (char \\))))))
+   ```"
   [f]
-  (let [vol (volatile! pnil)]
+  (let [vol (volatile! eps)]
     (vreset! vol (f (deref vol)))))
 
 ;;---------------------------------------------------------
@@ -547,13 +806,14 @@
   (reply/ok reply (source/index source)))
 
 (defn user-state
-  "Thus parser returns the current user state."
+  "This parser returns the current user state."
   [source reply]
   (reply/ok reply (source/user-state source)))
 
 (defn user-state-satisfy
-  "Succeeds if `pred` returns logical true when called with the current
-   user source, otherwise it fails.  Returns the return value of `pred`."
+  "Returns a parser that succeeds if `pred` returns logical
+   true when called with the current user state, otherwise it fails.
+   Returns the return value of `pred`."
   [pred]
   (fn [source reply]
     (if-let [ret (pred (source/user-state source))]
@@ -561,14 +821,16 @@
       (reply/fail reply error/no-message))))
 
 (defn set-user-state
-  "Sets the user source to `u`."
+  "Returns a parser that unconditionally sets the user state to `x`
+   and returns swapped-in user state."
   [u]
   (fn [source reply]
     (source/with-user-state! source u)
     (reply/ok reply u)))
 
 (defn swap-user-state
-  "Sets ths user source to `(apply f user-state args)`."
+  "Returns a parser that sets ths user state to `(apply f user-state args)`,
+   and returns the swapped-in user state."
   [f & args]
   (fn [source reply]
     (let [u (apply f (source/user-state source) args)]

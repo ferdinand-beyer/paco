@@ -1,8 +1,7 @@
 {:extra-indents
- {paco.core/with      [[:block 1]]
-  paco.reply/continue [[:block 3]]
-  paco.reply/with     [[:block 1]]
+ {paco.core/let-parser [[:block 1]]
+  paco.core/let-return [[:block 1]]
 
   ;; ? Namespaced rules do not seem to work with Calva.
-  continue [[:block 3]]
-  with     [[:block 1]]}}
+  let-parser [[:block 1]]
+  let-return [[:block 1]]}}

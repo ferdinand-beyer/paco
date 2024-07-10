@@ -1,10 +1,10 @@
-(ns paco.detail.parsers
-  "Advanced low-level parsers, used by higher level ones."
+(ns paco.detail.advanced
+  "Advanced parser combinators."
   (:refer-clojure :exclude [sequence])
   (:require [paco.detail.error :as error]
             [paco.detail.reply :as reply]
             [paco.detail.source :as source])
-  #?(:cljs (:require-macros [paco.detail.parsers])))
+  #?(:cljs (:require-macros [paco.detail.advanced])))
 
 (defn sequence
   "Applies the `parsers` sequentially and collects their return values
@@ -29,54 +29,6 @@
               (reply/with-error reply (error/merge error1 (reply/error reply)))
               reply)))
         (reply/with-value reply (rf result))))))
-
-(defn- emit-with-seq
-  "Emits code for the `with-seq` macro."
-  [bindings body]
-  {:pre [(vector? bindings)
-         (seq bindings)
-         (even? (count bindings))]}
-  (let [source (gensym "source__")
-        reply  (gensym "reply__")
-        emit   (fn emit [[binding-form parser & more-bindings] modcount-before error-before]
-                 `(let [~reply (~parser ~source ~reply)]
-                    (if (reply/ok? ~reply)
-                      (let [~binding-form (reply/value ~reply)]
-                        ~(if (seq more-bindings)
-                           ;; recur to next parsers
-                           (let [modcount (gensym "modcount__")
-                                 error    (gensym "error__")]
-                             `(let [~modcount (source/modcount ~source)
-                                    ~error    (reply/error ~reply)]
-                                ~(emit more-bindings
-                                       modcount
-                                       (if error-before
-                                         `(if (= ~modcount-before ~modcount)
-                                            (error/merge ~error-before ~error)
-                                            ~error)
-                                         error))))
-                           ;; this was the last parser
-                           (if error-before
-                             `(let [value# (do ~@body)]
-                                (if (= ~modcount-before (source/modcount ~source))
-                                  (reply/ok ~reply value# (error/merge ~error-before (reply/error ~reply)))
-                                  (reply/with-value ~reply value#)))
-                             `(reply/with-value ~reply (do ~@body)))))
-                      ;; parser failed
-                      ~(if error-before
-                         `(let [error# (reply/error ~reply)]
-                            (if (= ~modcount-before (source/modcount ~source))
-                              (reply/with-error ~reply (error/merge ~error-before error#))
-                              ~reply))
-                         reply))))]
-    (list `fn [source reply] (emit bindings nil nil))))
-
-(defmacro with-seq
-  "Creates a parser that applies parsers in sequence and transforms
-   the return values."
-  {:clj-kondo/lint-as 'clojure.core/let}
-  [bindings & body]
-  (emit-with-seq bindings body))
 
 ;;---------------------------------------------------------
 ;; Repeat parsers

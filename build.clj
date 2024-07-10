@@ -3,7 +3,7 @@
   (:require [clojure.tools.build.api :as b]))
 
 (def lib 'com.fbeyer/paco)
-(def version (format "0.2.%s" (b/git-count-revs nil)))
+(def version (format "0.3.%s" (b/git-count-revs nil)))
 
 (def class-dir "target/classes/clj")
 (def java-class-dir "target/classes/java")

@@ -32,6 +32,7 @@
 (def ^:private ^:const seqex-tag ::seqex)
 (def ^:private ^:const seqex-meta {seqex-tag true})
 
+;; "flatseq"?
 (defn seqex
   "Reducing function for 'sequence expression' parsers.
 

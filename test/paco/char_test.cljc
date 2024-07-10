@@ -172,6 +172,9 @@
     (is (= #{(error/expected "pattern '[a-z]+'") error/unexpected-end}
            (:messages reply)))))
 
+(deftest regex-groups-test
+  (is (= ["foobar" "foo" "bar"] (p/parse (c/regex-groups #"(.{3})(.+)") "foobar"))))
+
 (deftest str*-test
   (is (= "" (p/parse (c/*str (c/string "foo")) "bar")))
   (is (= "fb" (p/parse (c/*str (p/alt (c/string-return "foo" \f)

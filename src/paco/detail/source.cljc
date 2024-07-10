@@ -161,17 +161,6 @@
      :clj     (.matchRegex ^Source source re)
      :default (impl/re-match source re)))
 
-(defn re-groups
-  "Matches the regular expression `re` at the current source position and
-   returns the matched string or a vector of captured groups,
-   like `clojure.core/re-groups`."
-  [source re]
-  (when-let [m (re-match source re)]
-    #?(:clj  (clojure.core/re-groups m)
-       :cljs (if (== (.-length m) 1)
-               (aget m 0)
-               (vec m)))))
-
 (defn read-char-when!
   "Reads and returns the next character when it satisfies `pred`.  Returns
    `false` when it does not satsify `pred`, and `nil` at the end of the

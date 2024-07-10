@@ -2,8 +2,8 @@
   (:refer-clojure :exclude [char newline])
   (:require [paco.char.preds :as preds]
             [paco.core :as p]
+            [paco.detail.advanced :as advanced]
             [paco.detail.error :as error]
-            [paco.detail.parsers :as dp]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
             [paco.detail.source :as source]))
@@ -12,7 +12,7 @@
 ;; Character source position
 
 (defn position
-  "Returns the current position in the input stream."
+  "This parser returns the current position in the input stream."
   [source reply]
   (reply/ok reply (source/position source)))
 
@@ -42,16 +42,27 @@
 
 ;; fparsec: normalises newlines
 (defn satisfy
+  "Returns a parser that succeeds if the next character in the input
+   stream satisfies the predicate `pred`, and returns the accepted character.
+   Otherwise, the parser fails without changing the parser state."
   ([pred]
    (satisfy pred nil))
   ([pred label]
    (satisfy-char pred (when label (error/expected label)))))
 
-;; fparsec: pchar
-(defn char [ch]
+(defn char
+  "Returns a parser that succeeds if `ch` comes next in the input stream and
+   returns the character `ch`.
+
+   Similar to:
+   - fparsec: `pchar`"
+  [ch]
   (satisfy-char (preds/eq ch) (error/expected-input ch)))
 
-(defn char-return [ch value]
+(defn char-return
+  "Returns a parser that succeeds if `ch` comes next in the input stream,
+   returning `value`."
+  [ch value]
   (p/return (char ch) value))
 
 (defn skip-char [ch]
@@ -62,20 +73,32 @@
 (def skip-any-char p/skip-any-token)
 
 ;; fparsec: + skip variants
-(defn any-of [chars]
-  (satisfy-char (preds/among chars) (map error/expected-input (set chars))))
+(defn any-of
+  "Returns a parser that succeeds if the next character in the input stream
+   is contained in the string `s`."
+  [s]
+  (satisfy-char (preds/among s) (map error/expected-input (set s))))
 
-(defn none-of [chars]
+(defn none-of
+  "Returns a parser that succeeds if the next character in the input stream
+   is not contained in the string `s`."
+  [s]
   ;; TODO: error message: (expected "any char not in ...")
-  (satisfy-char (preds/not-among chars) nil))
+  (satisfy-char (preds/not-among s) nil))
 
 (defn char-range
+  "Returns a parser that succeeds if the next character in the
+   input stream is within the range `[min-ch max-ch]` (inclusive).
+
+   Example: `(char-range \\a \\z)` matches a lower-case ASCII character."
   ([min-ch max-ch]
    (char-range min-ch max-ch nil))
   ([min-ch max-ch label]
    (satisfy (preds/in-range min-ch max-ch) label)))
 
-(defn newline-return [value]
+(defn newline-return
+  "Returns a parser that matches a newline sequence and returns `x`."
+  [value]
   (let [expected-error (error/expected "newline")]
     (fn [source reply]
       (if-let [ch (source/peek source)]
@@ -93,8 +116,8 @@
         (reply/fail reply error/unexpected-end)))))
 
 (def newline
-  "Parses a common newline sequence: `\\n`, `\\r`, or `\\r\\n`, normalizing the
-   return value to `\\n`."
+  "Parses a common newline sequence: `\\n`, `\\r`,
+   or `\\r\\n`, normalizing the return value to `\\n`."
   (newline-return \newline))
 
 (def skip-newline (newline-return nil))
@@ -104,10 +127,17 @@
   (p/alt newline (p/return (any-of "\u0085\u2028\u2029") \newline)))
 
 (def tab
+  "This parser matches a tabulator character."
   (char \tab))
 
 (def space
+  "This parser matches a common whitespace character: space, tabulator,
+   newline or carriage return."
   (satisfy preds/space? "whitespace character"))
+
+(def unicode-space
+  "This parser matches any Unicode whitespace character."
+  (satisfy preds/unicode-space? "whitespace character"))
 
 (def ascii-upper
   (satisfy preds/ascii-upper? "ASCII upper-case letter"))
@@ -151,10 +181,19 @@
   (when (re-find #"[\r\n]" s)
     (throw (ex-info "String literal cannot contain newlines" {}))))
 
-;; fparsec: pstring
-;; fparsec: + skipString, stringReturn, CI variants,
-;;   anyString, skipAnyString
-(defn string [s]
+(defn string
+  "Returns a parser that succeeds if the string `s` comes next in the input
+   stream.
+
+   This parser is atomic: it does not change the input state when only a prefix
+   of `s` matches.
+
+   As an optimisation, this parser skips line tracking, therefore `s` cannot
+   contain newlines.
+
+   Similar to:
+   - fparsec: `pstring`"
+  [s]
   (check-string-literal s)
   (let [length (count s)
         expected-error (error/expected-input s)
@@ -168,10 +207,14 @@
                             unexpected-end
                             expected-error))))))
 
-(defn string-return [ch x]
-  (p/return (string ch) x))
+(defn string-return
+  "Like `(return (string s) x)`."
+  [s x]
+  (p/return (string s) x))
 
-(defn string-ci [s]
+(defn string-ci
+  "Like `string`, but matches `s` case-insensitive."
+  [s]
   (check-string-literal s)
   (let [length (count s)
         expected-error (error/expected-input s) ;; ? expected-input-ci?
@@ -185,30 +228,45 @@
                             unexpected-end
                             expected-error))))))
 
+;; fparsec: + skipString, CI variants,
+;;   anyString, skipAnyString
+
 ;; fparsec: restOfLine, skipRestOfLine
 ;; Can be implemented with regex
 ;; fparsec: charsTillString
 #_(defn chars-until-str [s skip? max-count])
 
 (defn *str-until
+  "Returns a parser that repeatedly applies the parser `p` for as long
+   as `pend` fails (without changing the parser state).  It returns a string
+   concatenation of the results returned by `p`.
+
+   When `include-end?` is true, also includes the result of `pend` in the
+   returned collection.
+
+   Similar to:
+   - fparsec: `manyCharsTill`"
   ([p pend]
    (*str-until p pend false))
   ([p pend include-end?]
-   (dp/until `*str-until p pend rfs/string true include-end?)))
+   (advanced/until `*str-until p pend rfs/string true include-end?)))
 
 (defn +str-until
+  "Like `*str-until`, but requires `p` to succeed at least once.
+
+   Similar to:
+   - fparsec: `many1CharsTill`"
   ([p pend]
    (+str-until p pend false))
   ([p pend include-end?]
-   (dp/until `+str-until p pend rfs/string false include-end?)))
+   (advanced/until `+str-until p pend rfs/string false include-end?)))
 
-;; fparsec: manySatisfy
-;; fparsec: manySatisfy2 -- different pred for first character
-;; fparsec: many1Satisfy: one or more
-;; fparsec: manyMinMaxSatisfy
 (defn *satisfy
-  "Parses a sequence of zero or more characters satisfying `pred`,
-   and returns them as a string."
+  "Returns a parser that parses a sequence of zero or more characters
+   satisfying `pred`, and returns them as a string.
+
+   Similar to:
+   - fparsec: `manySatisfy`"
   [pred]
   (let [pred (preds/pred pred)]
     (fn [source reply]
@@ -217,7 +275,12 @@
                       (source/read-from source mark))]
           (reply/ok reply value))))))
 
-(defn +satisfy [pred]
+(defn +satisfy
+  "Like `*satisfy`, but requires `pred` to succeed at least once.
+
+   Similar to:
+   - fparsec: `many1Satisfy`"
+  [pred]
   (let [pred (preds/pred pred)]
     (fn [source reply]
       (source/with-resource [mark (source/mark source)]
@@ -225,13 +288,19 @@
           (reply/ok reply (source/read-from source mark))
           (reply/fail reply (error/unexpected-token-or-end source)))))))
 
-(defn *skip-satisfy [pred]
+;; fparsec: manySatisfy2 -- different pred for first character
+;; fparsec: manyMinMaxSatisfy
+
+(defn *skip-satisfy
+  "Like `*satisfy`, but returns `nil`."
+  [pred]
   (let [pred (preds/pred pred)]
     (fn [source reply]
       (source/skip-chars-while! source pred)
       (reply/ok reply nil))))
 
 (defn +skip-satisfy
+  "Like `+satisfy`, but returns `nil`."
   ([pred]
    (+skip-satisfy pred nil))
   ([pred label]
@@ -241,12 +310,18 @@
          (reply/ok reply nil)
          (reply/fail reply unexpected))))))
 
-(def *space
-  "- fparsec: spaces"
+(def *skip-space
+  "This parser skips over zero or more space characters.
+
+   Similar to:
+   - fparsec: `spaces`"
   (*skip-satisfy preds/space?))
 
-(def +space
-  "- fparsec: spaces1"
+(def +skip-space
+  "This parser skips over one or more space characters.
+
+   Similar to:
+   - fparsec: `spaces1`"
   (+skip-satisfy preds/space? "whitespace characters"))
 
 (defn- re-match-length [m]
@@ -256,38 +331,68 @@
             (.start ^java.util.regex.MatchResult m))
      :cljs (.-length (aget m 0))))
 
-;;? Add regex-groups?
+(defn- regex-parser [re label result-fn]
+  (let [expected-error (error/expected label)]
+    (fn [source reply]
+      (if-some [m (source/re-match source re)]
+        (let [n (re-match-length m)]
+          (reply/ok reply (result-fn source n m)))
+        (reply/fail reply (error/merge expected-error
+                                       (error/unexpected-token-or-end source)))))))
+
+(defn- re-label [re]
+  (str "pattern '" #?(:clj re, :cljs (.-source re)) "'"))
+
 (defn regex
   "Returns a parser that matches the regular expression pattern `re` at the
-   current source position and returns matched string."
+   current source position and returns the matched string."
   ([re]
-   (regex re (str "pattern '" #?(:clj re, :cljs (.-source re)) "'")))
+   (regex re (re-label re)))
   ([re label]
-   (let [expected-error (error/expected label)]
-     (fn [source reply]
-       (if-some [m (source/re-match source re)]
-         (reply/ok reply (source/read-str! source (re-match-length m)))
-         (reply/fail reply (error/merge expected-error
-                                        (error/unexpected-token-or-end source))))))))
+   (regex-parser re label (fn [source n _] (source/read-str! source n)))))
+
+(defn regex-groups
+  "Returns a parser that matches the regular expression pattern `re`
+   at the current source position and returns the matched string or a vector of
+   groups like `re-groups`."
+  ([re]
+   (regex-groups re (re-label re)))
+  ([re label]
+   (regex-parser re label (fn [source n m]
+                            (source/skip! source n)
+                            #?(:clj  (re-groups m)
+                               :cljs (if (== (.-length m) 1)
+                                       (aget m 0)
+                                       (vec m)))))))
 
 ;; fparsec: identifier
 
-;; fparsec: manyChars, manyStrings
-(defn *str [p]
-  (dp/repeat-many `*str p rfs/string))
+(defn *str
+  "Returns a parser that matches `p` zero or more times and returns a string of
+   the concatenated results of `p`.
 
-;; fparsec: many1Chars, many1Strings
-(defn +str [p]
-  (dp/repeat-min `+str p rfs/string 1))
+   Similar to:
+   - fparsec: `manyChars`, `manyStrings`"
+  [p]
+  (advanced/repeat-many `*str p rfs/string))
+
+(defn +str
+  "Like `*str`, but requires `p` to match at least ocne.
+
+   Similar to:
+   - fparsec: `many1Chars`, `many1Strings`"
+  [p]
+  (advanced/repeat-min `+str p rfs/string 1))
 
 (defn strcat
-  "Applies the parsers `ps` in sequence and returns the string concatenation of
-   their return values"
+  "Returns a parser that applies the parsers `ps` in sequence and returns
+   the string concatenation of their return values"
   [& ps]
-  (dp/sequence rfs/string ps))
+  (advanced/sequence rfs/string ps))
 
 (defn skipped
-  "Applies the parser `p` and returns the skipped source characters as a string."
+  "Returns a parser that applies the parser `p` and returns the skipped source
+   characters as a string (ignoring the result of `p`)."
   [p]
   (fn [source reply]
     (source/with-resource [mark (source/mark source)]

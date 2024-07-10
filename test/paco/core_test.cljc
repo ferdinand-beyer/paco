@@ -5,8 +5,8 @@
             [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
-(deftest pnil-test
-  (let [reply (helper/run p/pnil)]
+(deftest eps-test
+  (let [reply (helper/run p/eps)]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
@@ -95,14 +95,19 @@
     (is (:changed? reply))
     (is (= [\t 2] (:value reply))))
 
-  (let [reply (helper/run (p/bind p/pnil (constantly helper/any)) "test")]
+  (let [reply (helper/run (p/bind p/eps (constantly helper/any)) "test")]
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= \t (:value reply)))))
 
-(deftest with-test
-  (let [p (p/with [a helper/any, b helper/any, c helper/any]
+(deftest let-parser-test
+  (let [p (p/let-parser [a helper/any, b helper/any, c helper/any]
             (p/return (zipmap [:a :b :c] [a b c])))]
+    (is (= {:a \a, :b \b, :c \c} (p/parse p "abcdef")))))
+
+(deftest let-return-test
+  (let [p (p/let-return [a helper/any, b helper/any, c helper/any]
+            (zipmap [:a :b :c] [a b c]))]
     (is (= {:a \a, :b \b, :c \c} (p/parse p "abcdef")))))
 
 (deftest map-test
@@ -158,23 +163,23 @@
     (is (not (:changed? reply)))
     (is (= (error/message :nope) (:error reply)))))
 
-(deftest tuple*-test
-  (let [reply (helper/run (p/tuple* [(p/return :begin) (p/return :end)]))]
+(deftest tuples-test
+  (let [reply (helper/run (p/tuples [(p/return :begin) (p/return :end)]))]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (= [:begin :end] (:value reply))))
 
-  (let [reply (helper/run (p/tuple* [(p/return :begin) helper/any (p/return :end)]) "test")]
+  (let [reply (helper/run (p/tuples [(p/return :begin) helper/any (p/return :end)]) "test")]
     (is (:ok? reply))
     (is (:changed? reply))
     (is (= [:begin \t :end] (:value reply))))
 
-  (let [reply (helper/run (p/tuple* [(p/return :begin) (p/fail "boom!")]))]
+  (let [reply (helper/run (p/tuples [(p/return :begin) (p/fail "boom!")]))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= (error/message "boom!") (:error reply))))
 
-  (let [reply (helper/run (p/tuple* [helper/any (p/fail "boom!")]) "test")]
+  (let [reply (helper/run (p/tuples [helper/any (p/fail "boom!")]) "test")]
     (is (:fail? reply))
     (is (:changed? reply))
     (is (= (error/message "boom!") (:error reply)))))
@@ -341,47 +346,78 @@
     (is (not (:changed? reply)))
     (is (= (error/expected "'x' comes next") (:error reply)))))
 
-(deftest not-followed-by-test
-  (let [reply (helper/run (p/not-followed-by helper/any) "abc")]
+(deftest not-test
+  (let [reply (helper/run (p/not helper/any) "abc")]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
     (is (nil? (:error reply))))
 
-  (let [reply (helper/run (p/not-followed-by (p/token \x)) "abc")]
+  (let [reply (helper/run (p/not (p/token \x)) "abc")]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
     (is (nil? (:error reply))))
 
-  (let [reply (helper/run (p/not-followed-by helper/any))]
+  (let [reply (helper/run (p/not helper/any))]
     (is (:ok? reply))
     (is (not (:changed? reply)))
     (is (nil? (:value reply)))
     (is (nil? (:error reply))))
 
-  (let [reply (helper/run (p/not-followed-by (p/token \x) "'x' comes next") "xyz")]
+  (let [reply (helper/run (p/not (p/token \x) "'x' comes next") "xyz")]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= (error/unexpected "'x' comes next") (:error reply)))))
 
-(deftest look-ahead-test
-  (is (= \a (p/parse (p/look-ahead helper/any) "abc")))
+(deftest peek-test
+  (is (= \a (p/parse (p/peek helper/any) "abc")))
 
-  (let [reply (helper/run (p/look-ahead p/any-token))]
+  (let [reply (helper/run (p/peek p/any-token))]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= error/unexpected-end (:error reply))))
 
-  (let [reply (helper/run (p/look-ahead (p/then (p/token \a) (p/token \b))) "a")]
+  (let [reply (helper/run (p/peek (p/then (p/token \a) (p/token \b))) "a")]
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= ::error/nested (get-in reply [:error :type])))
     (is (= #{error/unexpected-end (error/expected-input \b)}
            (error/message-set (get-in reply [:error :error]))))))
 
-(deftest cat*-test
-  (is (= [\a \b \c] (p/parse (p/cat* [helper/any helper/any helper/any])
+(deftest cond-test
+  (let [p (p/cond (p/token \a) (p/token \b) p/any-token)]
+    (is (= \b (p/parse p "ab")))
+    (is (= \x (p/parse p "x")))
+    (let [reply (helper/run p "a")]
+      (is (:fail? reply))
+      (is (:changed? reply))
+      (is (= #{error/unexpected-end (error/expected-input \b)}
+             (error/message-set (:error reply)))))
+    (let [reply (helper/run p "ax")]
+      (is (:fail? reply))
+      (is (:changed? reply))
+      (is (= #{(error/unexpected-input \x) (error/expected-input \b)}
+             (error/message-set (:error reply)))))))
+
+(deftest cond-bind-test
+  (let [p (p/cond-bind (p/alt (p/token \a) (p/token \b))
+                       p/token
+                       p/end)]
+    (is (nil? (p/parse p "")))
+    (is (= \a (p/parse p "aa")))
+    (is (= \b (p/parse p "bb")))
+    (let [reply (helper/run p "xx")]
+      (is (:fail? reply))
+      (is (not (:changed? reply)))
+      (is (= #{(error/unexpected-input \x)
+               (error/expected-input \a)
+               (error/expected-input \b)
+               error/expected-end}
+             (error/message-set (:error reply)))))))
+
+(deftest cats-test
+  (is (= [\a \b \c] (p/parse (p/cats [helper/any helper/any helper/any])
                              "abcd"))))
 
 (deftest cat-test
@@ -412,7 +448,7 @@
   (is (empty? (p/parse (p/* (p/token \a)) "bbb")))
   (is (= [\a \a \a] (p/parse (p/* (p/token \a)) "aaabbb")))
 
-  (is (thrown? ExceptionInfo (helper/run (p/* p/pnil)))
+  (is (thrown? ExceptionInfo (helper/run (p/* p/eps)))
       "must not accept empty input")
 
   (let [reply (helper/run (p/* helper/any))]
