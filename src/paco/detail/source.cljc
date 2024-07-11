@@ -16,6 +16,7 @@
 
 (defn release!
   "Releases any resources held by `x`."
+  #?(:clj {:inline (fn [x] `(.close ~(tag x 'java.lang.AutoCloseable)))})
   [x]
   #?(:bb      (impl/release! x)
      :clj     (.close ^java.lang.AutoCloseable x)
