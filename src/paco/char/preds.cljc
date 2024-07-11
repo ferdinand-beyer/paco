@@ -66,6 +66,7 @@
                       (ICharPredicate/or (pred p1) (pred p2))
                       ps)))))
 
+;; ? rename to `any-of`, like the parser?
 (defn among [chars]
   #?(:bb   #(str/index-of chars %)
      :cljs #(str/index-of chars %)

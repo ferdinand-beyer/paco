@@ -117,7 +117,7 @@
    the parser returned by `f` to the input.
 
    Similar to:
-   - `>>=` (parsec, fparsec)"
+   - parsec, fparsec: `>>=`"
   [p f]
   (fn [source reply]
     (let [reply (p source reply)]
@@ -442,7 +442,7 @@
    Providing a `label` is slightly faster, because the parser doesn't
    have to aggregate error messages.
 
-   - `choice`, `choiceL` (parsec, fparsec)"
+   - parsec, fparsec: `choice`, `choiceL`"
   ([ps]
    (if-let [p (first ps)]
      (reduce alt2 p (next ps))
@@ -520,7 +520,7 @@
   "Returns a parser that behaves like `p`, but always restores the parser
    state.
 
-   - `lookAhead` (parsec, fparsec)"
+   - parsec, fparsec: `lookAhead`"
   [p]
   (fn [source reply]
     (source/with-resource [mark (source/mark source)]
@@ -538,25 +538,27 @@
               (source/backtrack! source mark)
               (reply/fail reply error))))))))
 
+;; ? rename to `if`
 (defn cond
   "Returns a parser that first applies `p`.  If `p` succeeds,
    applies `pthen`.  Otherwise, when `p` fails without changing the parser
    state, applies `pelse`."
   ([p pthen] (then p pthen))
+  ;; TODO: This is wrong: We don't want to apply `pelse` when `pthen` fails!
   ([p pthen pelse] (alt (then p pthen) pelse)))
 
+;; ? rename to `if-bind`
 (defn cond-bind
   "Returns a parser that first applies `p`.  If `p` succeeds,
-   applies the parser returned by calling `f` with the result of `p`.
+   applies the parser returned by calling `then-fn` with the result of `p`.
    Otherwise, when `p` fails without changing the parser state, applies
    `pelse`."
   ([p then-fn] (bind p then-fn))
+  ;; TODO: Wrong like `cond`
   ([p then-fn pelse] (alt (bind p then-fn) pelse)))
 
 ;;---------------------------------------------------------
 ;; Sequences / seqexp
-
-;;? Add a fn to treat a seqex as one unit to prevent flattening?
 
 (defn cat
   "Returns a parser that applies the given parsers in sequence,
@@ -583,7 +585,9 @@
 (defn ?
   "Returns a parser that parses an optional occurrence of `p`.
 
-   When `p` fails without changing parser state, `(? p)` succeeds with `nil`.
+   When `p` fails without changing parser state, `(? p)` succeeds with `nil`,
+   and `(? p not-found)` with `not-found`.
+
    When `p` fails after changing parser state, so will `(? p)`.
 
    This is a 'sequence expression' parser, see `cat`.
@@ -754,8 +758,8 @@
 ;; Forwarding / lazy / recursive parsers
 
 (defmacro fwd
-  "Returns a parser that applies the parser obtained by evaluating `expr`,
-   delaying evaluation until it is needed.
+  "Returns a parser that, when applied, evaluates `body` and forwards to the
+   resulting parser.
 
    Useful for recursive parsers, to use a parser that has been declared but not
    yet defined, usually in a var:
@@ -766,9 +770,9 @@
 
    **Warning**: Left-recursive parsers are not supported and will lead to
    infinite loops / stack overflows."
-  [expr]
+  [& body]
   `(fn [source# reply#]
-     (let [p# ~expr]
+     (let [p# (do ~@body)]
        (p# source# reply#))))
 
 (defn force
@@ -833,14 +837,14 @@
    and returns swapped-in user state."
   [u]
   (fn [source reply]
-    (source/with-user-state! source u)
+    (source/reset-user-state! source u)
     (reply/ok reply u)))
 
 (defn swap-user-state
-  "Returns a parser that sets ths user state to `(apply f user-state args)`,
+  "Returns a parser that sets the user state to `(apply f user-state args)`,
    and returns the swapped-in user state."
   [f & args]
   (fn [source reply]
     (let [u (apply f (source/user-state source) args)]
-      (source/with-user-state! source u)
+      (source/reset-user-state! source u)
       (reply/ok reply u))))

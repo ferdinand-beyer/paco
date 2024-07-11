@@ -82,6 +82,8 @@
                                                     error/unexpected-end
                                                     (error/unexpected-input next-ch)))))))))
 
+;; fparsec: + nextCharSatisfies, nextCharSatisfiesNot
+
 (def any-char p/any-token)
 (def skip-any-char p/skip-any-token)
 
@@ -246,6 +248,7 @@
 
 ;; fparsec: restOfLine, skipRestOfLine
 ;; Can be implemented with regex
+
 ;; fparsec: charsTillString
 #_(defn chars-until-str [s skip? max-count])
 
@@ -302,6 +305,8 @@
           (reply/fail reply (error/unexpected-token-or-end source)))))))
 
 ;; fparsec: manySatisfy2 -- different pred for first character
+;; useful for identifiers
+
 ;; fparsec: manyMinMaxSatisfy
 
 (defn *skip-satisfy
@@ -390,7 +395,7 @@
   (advanced/repeat-many `*str p rfs/string))
 
 (defn +str
-  "Like `*str`, but requires `p` to match at least ocne.
+  "Like `*str`, but requires `p` to match at least once.
 
    Similar to:
    - fparsec: `many1Chars`, `many1Strings`"
@@ -414,3 +419,5 @@
           (reply/ok? reply) (reply/with-value (source/read-from source mark)))))))
 
 ;; fparsec: number parsers (int, float)
+;; fparsec: assertions: notFollowedByEof, followedByNewline, notFollowedByNewline
+;;  followedByString, etc.

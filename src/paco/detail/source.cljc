@@ -219,7 +219,7 @@
      :clj     (.getUserState ^Source source)
      :default (impl/user-state source)))
 
-(defn with-user-state!
+(defn reset-user-state!
   "Sets the user state to `state`, and returns the `source`."
   #?(:clj {:inline (fn [source state] `(doto ~(tag source) (.setUserState ~state)))})
   [source state]

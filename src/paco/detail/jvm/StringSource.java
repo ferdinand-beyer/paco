@@ -154,6 +154,6 @@ public final class StringSource implements ICharSource {
 
     @Override
     public String readFrom(ISourceMark mark) {
-        return input.substring(mark.index(), index);
+        return input.substring(((Mark) mark).index, index);
     }
 }
