@@ -538,24 +538,38 @@
               (source/backtrack! source mark)
               (reply/fail reply error))))))))
 
-;; ? rename to `if`
-(defn cond
-  "Returns a parser that first applies `p`.  If `p` succeeds,
-   applies `pthen`.  Otherwise, when `p` fails without changing the parser
-   state, applies `pelse`."
-  ([p pthen] (then p pthen))
-  ;; TODO: This is wrong: We don't want to apply `pelse` when `pthen` fails!
-  ([p pthen pelse] (alt (then p pthen) pelse)))
-
-;; ? rename to `if-bind`
 (defn cond-bind
-  "Returns a parser that first applies `p`.  If `p` succeeds,
+  "Returns a parser that first applies `p`.  Then, if `p` succeeds,
    applies the parser returned by calling `then-fn` with the result of `p`.
-   Otherwise, when `p` fails without changing the parser state, applies
-   `pelse`."
+   Otherwise, if `p` fails without changing the parser state, applies
+   `pelse`.  If `p` fails after changing the parser state, so does the
+   `cond-bind` parser."
   ([p then-fn] (bind p then-fn))
-  ;; TODO: Wrong like `cond`
-  ([p then-fn pelse] (alt (bind p then-fn) pelse)))
+  ([p then-fn pelse]
+   (fn [source reply]
+     (let [modcount (source/modcount source)
+           reply    (p source reply)
+           error    (reply/error reply)]
+       (if (reply/ok? reply)
+         (let [modcount (source/modcount source)
+               pthen    (then-fn (reply/value reply))
+               reply    (pthen source reply)]
+           (cond-> reply
+             (= modcount (source/modcount source))
+             (reply/with-error (error/merge error (reply/error reply)))))
+         (if (= modcount (source/modcount source))
+           (-> (pelse source reply)
+               (reply/with-error (error/merge error (reply/error reply))))
+           ;; p failed after changing the parser state
+           reply))))))
+
+(defn cond
+  "Returns a parser that first applies `p`.  Then, if `p` succeeds,
+   applies `pthen`.  Otherwise, if `p` fails without changing the parser
+   state, applies `pelse`.  If `p` fails after changing the parser state,
+   so does the `cond` parser."
+  ([p pthen] (then p pthen))
+  ([p pthen pelse] (cond-bind p (constantly pthen) pelse)))
 
 ;;---------------------------------------------------------
 ;; Sequences / seqexp

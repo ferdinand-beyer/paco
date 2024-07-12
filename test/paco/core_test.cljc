@@ -398,7 +398,13 @@
       (is (:fail? reply))
       (is (:changed? reply))
       (is (= #{(error/unexpected-input \x) (error/expected-input \b)}
-             (error/message-set (:error reply)))))))
+             (error/message-set (:error reply))))))
+  (testing "does not apply `pelse` when `pthen` fails"
+    (let [p     (p/cond p/eps (p/fail "failed") (p/return :fail))
+          reply (helper/run p "a")]
+      (is (:fail? reply))
+      (is (not (:changed? reply)))
+      (is (= #{(error/message "failed")} (error/message-set (:error reply)))))))
 
 (deftest cond-bind-test
   (let [p (p/cond-bind (p/alt (p/token \a) (p/token \b))
