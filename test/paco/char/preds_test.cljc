@@ -65,7 +65,7 @@
     (is (preds/test p \7))
     (is (preds/test p \x))
     (is (not (preds/test p \space))))
-  (let [p (preds/or preds/digit? preds/letter? (preds/among "_-$"))]
+  (let [p (preds/or preds/digit? preds/letter? (preds/any-of "_-$"))]
     (is (preds/test p \7))
     (is (preds/test p \x))
     (is (preds/test p \$))

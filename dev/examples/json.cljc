@@ -10,7 +10,7 @@
   #?(:clj (:import [clojure.lang MapEntry])))
 
 (def skip-whitespace
-  (c/*skip-satisfy (preds/among " \r\n\t")))
+  (c/*skip-satisfy (preds/any-of " \r\n\t")))
 
 (defn number [source reply]
   (if-let [m (source/re-match source #"-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][-+]?[0-9]+)?")]
@@ -49,7 +49,7 @@
                         (c/char-return \t \tab)
                         (p/then (c/skip-char \u) unicode))
         escape   (p/then (c/skip-char \\) dispatch)
-        regular  (-> (preds/not (preds/or (preds/among "\"\\") preds/control?))
+        regular  (-> (preds/not (preds/or (preds/any-of "\"\\") preds/control?))
                      (c/satisfy "regular character"))
         char     (p/alt escape regular)
         quote    (c/skip-char \")]
@@ -59,7 +59,7 @@
 
 (def string
   (let [quote    (preds/eq \")
-        regular  (preds/not-among "\"\\")
+        regular  (preds/none-of "\"\\")
         expected (error/expected-input \")
         pstring  (fn [source reply]
                    ;; skip over start quote

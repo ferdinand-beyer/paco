@@ -95,14 +95,14 @@
   "Returns a parser that succeeds if the next character in the input stream
    is contained in the string `s`."
   [s]
-  (satisfy-char (preds/among s) (map error/expected-input (set s))))
+  (satisfy-char (preds/any-of s) (map error/expected-input (set s))))
 
 (defn none-of
   "Returns a parser that succeeds if the next character in the input stream
    is not contained in the string `s`."
   [s]
   ;; TODO: error message: (expected "any char not in ...")
-  (satisfy-char (preds/not-among s) nil))
+  (satisfy-char (preds/none-of s) nil))
 
 (defn char-range
   "Returns a parser that succeeds if the next character in the

@@ -58,11 +58,11 @@ public interface ICharPredicate {
         return c -> ch != c;
     }
 
-    static ICharPredicate among(String chars) {
+    static ICharPredicate anyOf(String chars) {
         return ch -> chars.indexOf(ch) >= 0;
     }
 
-    static ICharPredicate notAmong(String chars) {
+    static ICharPredicate noneOf(String chars) {
         return ch -> chars.indexOf(ch) < 0;
     }
 

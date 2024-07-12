@@ -66,16 +66,15 @@
                       (ICharPredicate/or (pred p1) (pred p2))
                       ps)))))
 
-;; ? rename to `any-of`, like the parser?
-(defn among [chars]
+(defn any-of [chars]
   #?(:bb   #(str/index-of chars %)
      :cljs #(str/index-of chars %)
-     :clj  (ICharPredicate/among chars)))
+     :clj  (ICharPredicate/anyOf chars)))
 
-(defn not-among [chars]
-  #?(:bb   (not (among chars))
-     :cljs (not (among chars))
-     :clj  (ICharPredicate/notAmong chars)))
+(defn none-of [chars]
+  #?(:bb   (not (any-of chars))
+     :cljs (not (any-of chars))
+     :clj  (ICharPredicate/noneOf chars)))
 
 (defn in-range [min max]
   #?(:bb   #(<= (code-point min) (code-point %) (code-point max))
@@ -102,11 +101,11 @@
 (def space?
   "Returns true if `ch` is a common whitespace character: space, tabulator,
    newline or carriage return."
-  (among " \t\n\r"))
+  (any-of " \t\n\r"))
 
 (def ^:private additional-unicode-space?
   "Characters considered whitespace by the JVM and .NET."
-  (among "\t\n\u000b\f\r"))
+  (any-of "\t\n\u000b\f\r"))
 
 (def unicode-space?
   "Returns true if `ch` is a Unicode space character (any space separator,
