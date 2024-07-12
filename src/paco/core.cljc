@@ -391,9 +391,9 @@
   "EXPERIMENTAL. Returns a parser that behaves like `p` when `p` succeeds,
    and recovers when `p` fails.
 
-   When `p` fails, renders the error using `render-fn`, and calls `error-fn`
-   with the rendered error.  It then backtracks to the state at which `p`
-   failed, and applies the parser returned by `error-fn`.
+   When `p` fails, renders the error using `render-fn`, and calls `f` with
+   the rendered error.  It then backtracks to the state at which `p` failed,
+   and applies the parser returned by `f`.
 
    The default `render-fn` returns a string representation of the error.
 
@@ -405,9 +405,9 @@
 
    Similarly, when `end-only?` is true, only recovers when `p` failed at the
    end of the input stream."
-  [p error-fn & {:keys [render-fn backtrack? modified-only? end-only?]
-                 :or {render-fn error/render
-                      backtrack? true}}]
+  [p f & {:keys [render-fn backtrack? modified-only? end-only?]
+          :or {render-fn error/render
+               backtrack? true}}]
   (fn [source reply]
     (source/with-resource [mark (source/mark source)]
       (let [reply (p source reply)]
@@ -416,7 +416,7 @@
                 (and modified-only? (source/at? source mark)))
           reply
           (let [error (render-fn source (reply/error reply))
-                pelse (error-fn error)]
+                pelse (f error)]
             (when backtrack?
               (source/backtrack-modified! source mark))
             (pelse source reply)))))))

@@ -2,6 +2,7 @@
   (:require [clojure.test :refer [deftest is testing]]
             [paco.core :as p]
             [paco.detail.error :as error]
+            [paco.detail.source :as source]
             [paco.helper :as helper])
   #?(:clj (:import [clojure.lang ExceptionInfo])))
 
@@ -276,6 +277,31 @@
   (let [reply (helper/run (p/?atomic (p/then helper/any helper/any) ::default) "x")]
     (is (:ok? reply))
     (is (= ::default (:value reply)))))
+
+(deftest bind-error-test
+  (is (= :ok (p/parse (p/bind-error (p/return :ok) (constantly p/eps)) "input")))
+  (let [pabc       (p/cats (map (comp p/token char) (range (int \a) (inc (int \z)))))
+        recover-fn (constantly (p/return "recovered"))]
+    (is (= "expected 'd'; unexpected end of input at line 1, column 4"
+           (p/parse (p/bind-error pabc p/return) "abc")))
+    (testing "custom error renderer"
+      (is (= {:index 3
+              :messages #{(error/expected-input \d) error/unexpected-end}}
+             (p/parse (p/bind-error pabc p/return
+                                    :render-fn (fn [source error]
+                                                 {:index    (source/index source)
+                                                  :messages (error/message-set error)}))
+                      "abc"))))
+    (testing "`:backtrack?` option"
+      (is (= \a (p/parse (p/bind-error pabc (constantly p/any-token)) "abcdef")))
+      (is (= \x (p/parse (p/bind-error pabc (constantly p/any-token) :backtrack? false) "abcxdef"))))
+    (testing "`:modified-only?` option"
+      (is (= "recovered" (p/parse (p/bind-error (p/fail "nope") recover-fn) "")))
+      (is (helper/fails? (p/bind-error (p/fail "nope") recover-fn :modified-only? true) ""))
+      (is (= "recovered" (p/parse (p/bind-error pabc recover-fn :modified-only? true) "abcdeq"))))
+    (testing "`:end-only?` option"
+      (is (= "recovered" (p/parse (p/bind-error pabc recover-fn :end-only? true) "")))
+      (is (helper/fails? (p/bind-error pabc recover-fn :end-only? true) "not at the end")))))
 
 (deftest alt-test
   (is (= \b (p/parse (p/alt (p/token \a) (p/token \b)) "bingo")))

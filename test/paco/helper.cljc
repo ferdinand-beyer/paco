@@ -20,4 +20,10 @@
       :position (source/position source)
       :changed? (not= modcount (source/modcount source))})))
 
+(defn reply [p input]
+  (p (source/of input) (reply/mutable-reply)))
+
+(defn fails? [p input]
+  (not (reply/ok? (reply p input))))
+
 (def any p/any-token)
