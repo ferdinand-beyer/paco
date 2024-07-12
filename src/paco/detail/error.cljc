@@ -5,30 +5,40 @@
   (:import #?(:clj [java.io StringWriter]
               :cljs [goog.string StringBuffer])))
 
-(defprotocol IError
-  (-reduce-msgs [error f result]))
-
 (defprotocol IMessage
-  (-msg-type [msg])
-  (-write-msg! [msg writer opts])
-  (-compare-msgs [msg other]))
+  "An error message."
+  (-msg-type [msg]
+    "Returns a keyword representing the type of this message.")
+  (-write-msg! [msg writer opts]
+    "Writes this message to `writer`.")
+  (-compare-msgs [msg other]
+    "Compare this message to `other`, determining message order."))
 
 (defn message?
+  "Returns true if `x` is a message, and optionally of the given `type`."
   ([x]
    (satisfies? IMessage x))
   ([x type]
    (and (satisfies? IMessage x)
         (= type (-msg-type x)))))
 
+(defprotocol IError
+  "An error is a collection of messages."
+  (-reduce-msgs [error f result]
+    "Reduce all messages in this error into `result` using the reducing
+     function `f`."))
+
 (defn- reduce-msgs [error f result]
   (cond
-    ;; ? Filter empty Label and Input messages?
-    ;; or don't create them in the first place
+    (nil? error) result
     (satisfies? IMessage error) (f result error)
     (satisfies? IError error) (-reduce-msgs error f result)
-    ;; Flatten sequences recursively.
+    ;; Flatten collections/sequences recursively.
     :else (reduce #(reduce-msgs %2 f %1) result error)))
 
+;; During parsing, most error messages we accumulate will be discarded,
+;; once the next parser succeeds.  We therefore want to make message
+;; accumulation using `merge` cheap.
 (deftype Union [e1 e2]
   IError
   (-reduce-msgs [_ f result]
@@ -79,7 +89,7 @@
 
 ;; fparsec: ToSortedArray
 (defn sort-messages
-  "Returns a sorted sequence of error messages."
+  "Returns a sorted sequence of distinct messages in `error`."
   [error]
   (sort compare-msgs (message-set error)))
 
@@ -106,14 +116,15 @@
    ::expected-input   ::expected
    ::unexpected       ::unexpected
    ::unexpected-input ::unexpected
-   ::nested           ::nested
-   ::compound         ::compound})
+   ::message          ::message
+   ::compound         ::compound
+   ::nested           ::nested})
 
 (defn- msg-group [msg]
   (type-group (-msg-type msg) ::other))
 
 ;; TODO: Options: multiline ('\n' or ';'), prefix such as "Parse Error: "
-;; TODO: Pretty-printing with source line and ^ marker
+;; TODO: Pretty-printing with source line and ^ marker (take the source)
 (defn write-messages!
   "Write error messages to `writer`."
   ([error writer]
@@ -167,6 +178,11 @@
               (write-messages! error writer pos)
               (-flush writer)
               (str sb)))))
+
+(defn render
+  "Default error renderer."
+  [source error]
+  (string error (source/position source)))
 
 ;;---------------------------------------------------------
 ;; Messages
