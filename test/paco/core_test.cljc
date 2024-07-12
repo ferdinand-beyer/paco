@@ -280,7 +280,7 @@
 
 (deftest bind-error-test
   (is (= :ok (p/parse (p/bind-error (p/return :ok) (constantly p/eps)) "input")))
-  (let [pabc       (p/cats (map (comp p/token char) (range (int \a) (inc (int \z)))))
+  (let [pabc       (p/cats (map p/token "abcdefghijklmnopqrstuvwxyz"))
         recover-fn (constantly (p/return "recovered"))]
     (is (= "expected 'd'; unexpected end of input at line 1, column 4"
            (p/parse (p/bind-error pabc p/return) "abc")))
