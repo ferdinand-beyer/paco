@@ -1,5 +1,5 @@
 (ns paco.core
-  (:refer-clojure :exclude [* + cat cond deref force map max min not not-empty peek ref repeat sequence])
+  (:refer-clojure :exclude [* + cat cond deref force map max min not not-empty peek repeat])
   (:require [clojure.core :as core]
             [paco.detail.advanced :as advanced]
             [paco.detail.error :as error]
