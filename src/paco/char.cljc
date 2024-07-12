@@ -16,6 +16,9 @@
   [source reply]
   (reply/ok reply (source/position source)))
 
+;; ? Use 1-based line/col?  0-based makes sense for programming,
+;; ? but the position is probably mostly used for display to users.
+
 (defn line-index
   "Returns the line index of the position `pos`.  The first line index is 0."
   [pos]

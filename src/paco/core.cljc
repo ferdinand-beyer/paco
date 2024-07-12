@@ -1,6 +1,7 @@
 (ns paco.core
   (:refer-clojure :exclude [* + cat cond deref force map max min not not-empty peek ref repeat sequence])
-  (:require [paco.detail.advanced :as advanced]
+  (:require [clojure.core :as core]
+            [paco.detail.advanced :as advanced]
             [paco.detail.error :as error]
             [paco.detail.reply :as reply]
             [paco.detail.rfs :as rfs]
@@ -10,7 +11,7 @@
 (defn- result-data [source reply]
   {:ok?        (reply/ok? reply)
    :value      (reply/value reply)
-   :error      (reply/error reply)
+   :error      (reply/error reply) ;; call error/render or a custom error renderer here?
    :index      (source/index source)
    :position   (source/position source)
    :user-state (source/user-state source)})
@@ -386,22 +387,39 @@
                (source/backtrack! source mark)
                (reply/ok reply not-found error)))))))))
 
-;; TODO: Error handling parsers
-;; Maybe two variants: All errors and only when changed state (`catch` and `catch!`)
-;; on-error: (f source reply original-state) => detail
-;; variant: on-error-apply: backtrack and fall back to another one?
-;; alternate names: except
-#_(defn catch
-    "When `p` fails, backtracks and resumes with the parser returned by
-   `(f error)`."
-    [p f])
+(defn bind-error
+  "EXPERIMENTAL. Returns a parser that behaves like `p` when `p` succeeds,
+   and recovers when `p` fails.
 
-;; Advanced: Full control.  Handler needs to supply a reply.
-#_(defn recover
-    "Applies the parser `p`.  If `p` fails, calls:
+   When `p` fails, renders the error using `render-fn`, and calls `error-fn`
+   with the rendered error.  It then backtracks to the state at which `p`
+   failed, and applies the parser returned by `error-fn`.
 
-   `(f source mark error reply)`"
-    [p f])
+   The default `render-fn` returns a string representation of the error.
+
+   When `backtrack?` is false, applies the fallback parser at the state
+   where `p` failed, without backtracking first.
+
+   When `modified-only?` is true, only recovers when `p` fails after changing
+   the parser state, and fails with the error reported by `p` instead.
+
+   Similarly, when `end-only?` is true, only recovers when `p` failed at the
+   end of the input stream."
+  [p error-fn & {:keys [render-fn backtrack? modified-only? end-only?]
+                 :or {render-fn error/render
+                      backtrack? true}}]
+  (fn [source reply]
+    (source/with-resource [mark (source/mark source)]
+      (let [reply (p source reply)]
+        (if (or (reply/ok? reply)
+                (and end-only? (core/not (source/end? source)))
+                (and modified-only? (source/at? source mark)))
+          reply
+          (let [error (render-fn source (reply/error reply))
+                pelse (error-fn error)]
+            (when backtrack?
+              (source/backtrack-modified! source mark))
+            (pelse source reply)))))))
 
 ;;---------------------------------------------------------
 ;; Parsing alternatives
@@ -792,7 +810,7 @@
 (defn force
   "Returns a parser that realizes and applies a delayed parser on demand."
   [d]
-  (fwd (clojure.core/force d)))
+  (fwd (core/force d)))
 
 (defmacro lazy
   "Returns a parser that evaluates `body` the first time it is needed,
