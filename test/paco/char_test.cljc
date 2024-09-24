@@ -183,7 +183,14 @@
     (is (:fail? reply))
     (is (not (:changed? reply)))
     (is (= #{(error/expected "pattern '[a-z]+'") error/unexpected-end}
-           (:messages reply)))))
+           (:messages reply))))
+
+  (is (= "b" (p/parse (p/then c/any-char (c/regex #"(?<=a)b"))
+                      "abc"))
+      "supports lookbehinds to previous position")
+
+  (let [reply (helper/run (p/then c/any-char (c/regex #"^b")) "abc")]
+    (is (:fail? reply) "does not match anchoring bounds")))
 
 (deftest regex-groups-test
   (is (= ["foobar" "foo" "bar"] (p/parse (c/regex-groups #"(.{3})(.+)") "foobar"))))

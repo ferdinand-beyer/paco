@@ -86,8 +86,10 @@
     (when (< index* end)
       #?(:clj (let [m (.. ^Pattern re (matcher input)
                           (region index* end)
-                          ;; Don't match ^, for compatibility with JavaScript.
-                          (useAnchoringBounds false))]
+                          ;; For compatibility with JavaScript: Don't match ^ and $...
+                          (useAnchoringBounds false)
+                          ;; ...but allow lookbehinds outside of the region.
+                          (useTransparentBounds true))]
                 (when (.lookingAt m)
                   m))
          :cljs (let [re* (if (and (.-sticky re) (not (.-global re)))

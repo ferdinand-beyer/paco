@@ -120,7 +120,10 @@ public final class StringSource implements ICharSource {
     @Override
     public MatchResult matchRegex(Pattern p) {
         if (index < end) {
-            final Matcher m = p.matcher(input).region(index, end).useAnchoringBounds(false);
+            final Matcher m = p.matcher(input)
+                    .region(index, end)
+                    .useAnchoringBounds(false)
+                    .useTransparentBounds(true);
             if (m.lookingAt()) {
                 return m;
             }
